@@ -1,150 +1,148 @@
-# 公开 Go RCE 案例库
+# Public Go RCE Case Library
 
-用途：给"什么算真 RCE"提供校准样本，避免把 E3 当 E1、把路径穿越当命令注入。
+Purpose: provide calibration samples for "what counts as real RCE", so you do not mistake E3 for E1 or path traversal for command injection.
 
-每条都标**证据等级**与**来源**。等级定义见 [verification gates](verification-gates.md)。
-**没有来源的条目已被剔除**——本文件不接受"我记得有个 CVE"。
+Every entry carries its **evidence tier** and **source**. Tier definitions live in [verification gates](verification-gates.md).
+**Entries without a source have been removed** — this file does not accept "I remember there was a CVE".
 
-**证据等级必须区分来源（2026-11-13 修订）**：`L3` 曾被同时用于"厂商/公开研究已证实"和"我们本机复现过"，
-两者可信度差一个量级，评审无法分辨。现拆成两级：
+**The evidence tier must distinguish provenance (revised 2026-11-13)**: `L3` was previously used both for "confirmed by a vendor or public research" and for "we reproduced it locally". Those differ by an order of magnitude in credibility, and a reviewer could not tell them apart. It is now split into two tiers:
 
-| 标记 | 含义 | 谁打的 payload |
+| Marker | Meaning | Who fired the payload |
 |---|---|---|
-| `L3-repro` | 我们自己在隔离环境打通，有负样本对照 | 本 skill 维护者 |
-| `L3-lit` | 有厂商公告 / 在野利用 / 公开 PoC / 补丁 diff 佐证，**我们没复现** | 外部 |
-| `L2` | 只有机制分析与来源，注入性未证 | 无人 |
+| `L3-repro` | we completed it in an isolated environment, with a negative control | this skill's maintainers |
+| `L3-lit` | vendor advisory / exploitation in the wild / public PoC / patch diff supports it, **we did not reproduce** | external |
+| `L2` | mechanism analysis and source only, injectability unproven | nobody |
 
-当前计数（2026-11-13）：`L3-repro` = **1**（A7，且**不是 RCE**，是任意文件读）；
-`L3-lit` = 4（A1–A4）；`L2` = 2（A5、A6）。**本库尚未有任何一条 Go RCE 是本机复现的** ——
-引用时不要把它读成"已验证可利用"。
+Current counts (2026-11-13): `L3-repro` = **1** (A7, and it is **not RCE** — it is arbitrary file read);
+`L3-lit` = 4 (A1-A4); `L2` = 2 (A5, A6). **No Go RCE in this library has been reproduced locally yet** — do not read a citation as "verified exploitable".
 
 
 ---
 
-## A. 已核验案例
+## A. Verified Cases
 
-### A1. Gogs / Gitea session 反序列化 → 提权 → git hooks RCE
-- **CVE**：CVE-2018-18925（Gogs）/ CVE-2018-18926（Gitea）
-- **影响**：Gogs ≤ 0.11.66，Gitea ≤ 1.5.3
-- **相**：E3（入口）→ 提权 → **E4**（终点）
-- **链条**：session 反序列化 → 普通用户被伪造成管理员 → 用管理员的 git hooks 编辑能力写入命令 → 服务账号执行
-- **证据**：L3-lit（外部已证实，本机未复现）。360CERT 报告 + NVD + gogs/gogs#5469 修复记录
-- **为什么收录**：这是"E3 不直达 RCE"最好的反例教材。把这条写成"gob 反序列化导致 RCE"就是把三跳压成一跳，属于失真。
-- **来源**：`https://www.secrss.com/articles/6190`
+### A1. Gogs / Gitea session deserialization -> privilege escalation -> git hooks RCE
+- **CVE**: CVE-2018-18925 (Gogs) / CVE-2018-18926 (Gitea)
+- **Affected**: Gogs <= 0.11.66, Gitea <= 1.5.3
+- **Phase**: E3 (entrance) -> privilege escalation -> **E4** (terminal)
+- **Chain**: session deserialization -> an ordinary user is forged into an admin -> the admin-only git hooks editing capability writes a command -> the service account executes it
+- **Evidence**: L3-lit (externally confirmed, not reproduced locally). 360CERT report + NVD + the gogs/gogs#5469 fix record
+- **Why included**: the best counterexample for teaching "E3 does not reach RCE directly". Writing this as "gob deserialization leads to RCE" collapses three hops into one, which is distortion.
+- **Source**: `https://www.secrss.com/articles/6190`
 
-### A2. Gitea diffpatch 写入 git hook → RCE（在野利用）
-- **CVE**：CVE-2026-60004，CVSS 9.8
-- **影响**：>= 1.17.0, < 1.27.1；修复 1.27.1（后续 1.27.2）
-- **状态**：CISA KEV，2026-08 起在野利用，公开 PoC 与 Nuclei 模板存在
-- **相**：**E4**，全程无 `exec.Command`
-- **链条**（据 Acronis 报告转述，未逐行核对 git 源码）：
-  1. 入口 `diffpatch` 端点，开放注册时任意访客可用
-  2. 同一份构造 patch 提交两次
-  3. 第一次把 payload 放进 git index；第二次在 merge 时触发 add 冲突，文件被直接写到磁盘
-  4. bare clone 的仓库根**即** `$GIT_DIR`，故写入 `hooks/post-index-change` 直接落进活的 hook 目录
-  5. git 下次触碰 index 时执行，身份为 Gitea 服务账号
-- **证据**：L3-lit（外部已证实，本机未复现）（在野利用 + PoC + 厂商公告）
-- **为什么收录**：只 grep `exec` 的审计会 100% 漏掉这个。E4 相存在的理由就是它。
-- **来源**：`https://www.helpnetsecurity.com/2026/08/26/gitea-cve-2026-60004-exploited-in-the-wild`、`https://securityonline.info/gitea-rce-vulnerability-exploited`
+### A2. Gitea diffpatch writes a git hook -> RCE (exploited in the wild)
+- **CVE**: CVE-2026-60004, CVSS 9.8
+- **Affected**: >= 1.17.0, < 1.27.1; fixed in 1.27.1 (then 1.27.2)
+- **Status**: CISA KEV, exploited in the wild since 2026-08, public PoC and Nuclei template exist
+- **Phase**: **E4**, with no `exec.Command` anywhere in the chain
+- **Chain** (paraphrased from the Acronis report; git source not verified line by line):
+  1. Entrance is the `diffpatch` endpoint, reachable by any visitor when open registration is on
+  2. Submit the same crafted patch twice
+  3. The first submission puts the payload into the git index; the second triggers an add conflict during merge, and the file is written straight to disk
+  4. For a bare clone the repo root **is** `$GIT_DIR`, so writing `hooks/post-index-change` lands directly in the live hook directory
+  5. git executes it the next time it touches the index, as the Gitea service account
+- **Evidence**: L3-lit (externally confirmed, not reproduced locally) (in-the-wild exploitation + PoC + vendor advisory)
+- **Why included**: an audit that only greps `exec` misses this 100% of the time. This is the whole reason phase E4 exists.
+- **Source**: `https://www.helpnetsecurity.com/2026/08/26/gitea-cve-2026-60004-exploited-in-the-wild`, `https://securityonline.info/gitea-rce-vulnerability-exploited`
 
-### A3. kubelet Windows SubPath 命令注入 → SYSTEM
-- **CVE**：CVE-2023-3676（及同源 CVE-2023-3955、CVE-2023-5528），CVSS 8.8
-- **影响**：kubelet ≤ v1.28.0 / v1.27.4 / v1.26.7 / v1.25.12 / v1.24.16 等（各分支修复版本已发布）；仅 Windows 节点
-- **相**：**E1**（Windows shell 二次解析）
-- **机制**：`MountSensitive()` 用 `exec.Command` 调 `cmd` 建符号链接；`subPath` 未净化，`cmd` 把参数当命令行解析 → `$()` 被执行
-- **修复方式**：**删掉 cmd 调用**，改用原生 Go 符号链接函数；另一处改为从环境变量传参而非用户输入
-- **证据**：L3-lit（外部已证实，本机未复现）（Akamai 研究 + 公开 PoC YAML + 修复提交）
-- **为什么收录**：证明"参数分开传 = 安全"在 Windows shell 上不成立。这是 E1 与 E5 的分界教案。
-- **来源**：`https://www.anquanke.com/post/id/293971`、`https://gbhackers.com/kubernetes-vulnerability-full-system-control`、阿里云 ACK 公告 2569524
+### A3. kubelet Windows SubPath command injection -> SYSTEM
+- **CVE**: CVE-2023-3676 (with siblings CVE-2023-3955, CVE-2023-5528), CVSS 8.8
+- **Affected**: kubelet <= v1.28.0 / v1.27.4 / v1.26.7 / v1.25.12 / v1.24.16 and similar (fixed releases out for each branch); Windows nodes only
+- **Phase**: **E1** (Windows shell re-parsing)
+- **Mechanism**: `MountSensitive()` uses `exec.Command` to call `cmd` for symlink creation; `subPath` is unsanitized and `cmd` parses the argument as a command line -> `$()` gets executed
+- **Fix**: **delete the cmd call** and use the native Go symlink function; the other site passes the value via an environment variable instead of user input
+- **Evidence**: L3-lit (externally confirmed, not reproduced locally) (Akamai research + public PoC YAML + fix commit)
+- **Why included**: proves "arguments passed separately = safe" does not hold on a Windows shell. It is the teaching case for the E1/E5 boundary.
+- **Source**: `https://www.anquanke.com/post/id/293971`, `https://gbhackers.com/kubernetes-vulnerability-full-system-control`, Alibaba Cloud ACK advisory 2569524
 
-### A4. Grafana DuckDB SQL 表达式 → 扩展加载 → 命令执行
-- **CVE**：CVE-2024-9264
-- **影响**：11.0.0–11.0.5、11.1.0–11.1.6、11.2.0–11.2.1；**RCE 仅 11.0.0**，其余版本可任意文件读
-- **相**：**E6**（数据库扩展加载 + 解释器内建管道执行）
-- **链条**：认证用户改 dashboard 表达式，把 datasource 从 `math` 改成 `sql` → `LOAD shellfs` 扩展 → `read_csv('id > /tmp/x 2>&1 |')` 的管道语法把内容交给 shell → `read_blob` 读回输出
-- **修复**：整块删除 SQL Expressions 功能（补丁里 `pkg/expr/sql/db.go` 全部返回 `not implemented`）
-- **证据**：L3-lit（外部已证实，本机未复现）（公开 PoC 仓库 + 补丁 diff + HTB 靶机 writeup）
-- **为什么收录**：标签是"SQL 注入"，本质是"能加载扩展的解释器"。按标签审计会得出错误的修复建议（转义 SQL 无效）。
-- **来源**：`https://onlybits.org/nollium/CVE-2024-9264`、`https://blog.gitcode.com/3c0afd30cb6c84547219818060a0a74a.html`
+### A4. Grafana DuckDB SQL expression -> extension loading -> command execution
+- **CVE**: CVE-2024-9264
+- **Affected**: 11.0.0-11.0.5, 11.1.0-11.1.6, 11.2.0-11.2.1; **RCE only on 11.0.0**, other versions give arbitrary file read
+- **Phase**: **E6** (database extension loading + interpreter built-in pipe execution)
+- **Chain**: an authenticated user edits a dashboard expression and switches the datasource from `math` to `sql` -> `LOAD shellfs` extension -> the pipe syntax in `read_csv('id > /tmp/x 2>&1 |')` hands the content to a shell -> `read_blob` reads the output back
+- **Fix**: the entire SQL Expressions feature was deleted (in the patch, everything under `pkg/expr/sql/db.go` returns `not implemented`)
+- **Evidence**: L3-lit (externally confirmed, not reproduced locally) (public PoC repo + patch diff + HTB machine writeup)
+- **Why included**: the label says "SQL injection" but the essence is "an interpreter that can load extensions". Auditing by label produces the wrong remediation (escaping the SQL does nothing).
+- **Source**: `https://onlybits.org/nollium/CVE-2024-9264`, `https://blog.gitcode.com/3c0afd30cb6c84547219818060a0a74a.html`
 
-### A5. Gitea external renderer 参数注入
-- **CVE**：CVE-2026-73539，CVSS 7.5，CWE-88
-- **相**：**E5**
-- **机制**：命令模板里由 markup Context 派生的 URL 未转义，可注入额外 renderer 参数（含加载可执行 filter 的选项）；配 pandoc 等 renderer + 可放置的 filter 文件 → 以服务账号执行
-- **证据**：**L2**。单一来源（2026-10-14 发布），未见 NVD 原文核对 → 使用前需复核，勿直接引用版本号
-- **为什么收录**：参数注入（CWE-88）与命令注入（CWE-78）的区分样本
-- **来源**：`https://nextguardhq.com/en/vulnerabilities/cve-2026-73539-gitea-gitea`
+### A5. Gitea external renderer argument injection
+- **CVE**: CVE-2026-73539, CVSS 7.5, CWE-88
+- **Phase**: **E5**
+- **Mechanism**: a URL derived from the markup Context is unescaped inside the command template, allowing extra renderer arguments (including options that load an executable filter); with a renderer such as pandoc plus a plantable filter file -> execution as the service account
+- **Evidence**: **L2**. Single source (published 2026-10-14), NVD original not checked -> re-verify before use, do not quote version numbers directly
+- **Why included**: a sample that separates argument injection (CWE-88) from command injection (CWE-78)
+- **Source**: `https://nextguardhq.com/en/vulnerabilities/cve-2026-73539-gitea-gitea`
 
-### A6. Go SSTI 方法论（非单一 CVE）
-- **相**：E2
-- **要点**：Go 模板注入大量是 **shadow vulnerability**（无 CVE）：引擎按设计运行，是应用把模板文本或 FuncMap 暴露给了用户
-- **可利用形态**：`{{.Method "arg"}}` 调对象方法；`{{call .Fn "arg"}}` 调函数值；FuncMap 注册了 exec/readfile 类函数
-- **不可利用形态**：`html/template` + 固定模板 + 纯函数 FuncMap
-- **证据**：L2（方法论层面，无需 CVE）
-- **来源**：`https://www.onsecurity.io/blog/go-ssti-method-research/`、`https://blog.takemyhand.xyz/2020/06/ssti-breaking-gos-template-engine-to`、`https://www.oligo.security/blog/safe-by-default-or-vulnerable-by-design-golang-server-side-template-injection`
+### A6. Go SSTI methodology (not a single CVE)
+- **Phase**: E2
+- **Key point**: much of Go template injection is a **shadow vulnerability** (no CVE): the engine works as designed, and the application exposed template text or a FuncMap to the user
+- **Exploitable shapes**: `{{.Method "arg"}}` calls a method on the object; `{{call .Fn "arg"}}` calls a function value; a FuncMap that registers exec/readfile-class functions
+- **Non-exploitable shapes**: `html/template` + fixed template + pure-function FuncMap
+- **Evidence**: L2 (methodology level, no CVE needed)
+- **Source**: `https://www.onsecurity.io/blog/go-ssti-method-research/`, `https://blog.takemyhand.xyz/2020/06/ssti-breaking-gos-template-engine-to`, `https://www.oligo.security/blog/safe-by-default-or-vulnerable-by-design-golang-server-side-template-injection`
 
-### A7. Gitea 1.4.0 LFS Oid 路径穿越 → **未授权任意文件读**（写侧被闸门挡住，非 RCE）
-- **CVE**：无独立编号，vulhub 收录目录名为 `gitea/1.4-rce`；1.4.1 修复
-- **相**：**X（路径穿越，入口）→ 仅到「凭据/配置泄露」**。**不落 E 相**
-- **机制**：
-  - `modules/lfs/content_store.go:29`（`Get`）与 `:49`（`Put`）均为 `filepath.Join(s.BasePath, transformKey(meta.Oid))`
-  - `transformKey()` 不做 `..` 校验：`len(key) < 5` 原样返回，否则 `filepath.Join(key[0:2], key[2:4], key[4:])`
-  - `Oid` 来自 LFS 请求体的 `oid` 字段
-  - **未授权的根因是少一个 `return`**：`server.go:221` `if !authenticate(...) { requireAuth(ctx) }` 之后函数继续执行到 `NewLFSMetaObject`，401 只是个装饰
-- **实测（2026-11-13，本机靶场，L3）**：
-  - 环境：CentOS 7 + `gitea-1.4.0-linux-amd64`（dl.gitea.com，53,662,000 B）+ sqlite，`gitea migrate` + `admin create-user`
-  - **硬前提：Git ≥ 2.1.2**。`modules/setting/setting.go:892` 在版本不足时执行 `LFS.StartServer = false`，LFS 路由**根本不注册**，一切 LFS 请求 404。CentOS 7 自带 git 1.8.3.1 因此必然踩坑
-  - 扫描器验证：补 `X-PATHTRAV-JOIN` 前对 `modules/lfs/` **0 命中**；补后命中 `content_store.go:29 / 49 / 80 / 90`，即 `Get` / `Put` / `Exists` / `Verify` 四个方法
-  - 读侧打通：`oid = "...." + "../../../../../../" + <绝对路径>`，无凭据即可读
-    | 目标 | 字节 | 校验 |
+### A7. Gitea 1.4.0 LFS Oid path traversal -> **unauthenticated arbitrary file read** (write side blocked by a gate; not RCE)
+- **CVE**: no dedicated ID; vulhub files it under the directory name `gitea/1.4-rce`; fixed in 1.4.1
+- **Phase**: **X (path traversal, the entrance) -> only reaches "credential/config disclosure"**. **Never reaches an E phase**
+- **Mechanism**:
+  - `modules/lfs/content_store.go:29` (`Get`) and `:49` (`Put`) both do `filepath.Join(s.BasePath, transformKey(meta.Oid))`
+  - `transformKey()` performs no `..` validation: `len(key) < 5` returns the key unchanged, otherwise `filepath.Join(key[0:2], key[2:4], key[4:])`
+  - `Oid` comes from the `oid` field of the LFS request body
+  - **The unauthenticated root cause is one missing `return`**: at `server.go:221`, `if !authenticate(...) { requireAuth(ctx) }` is followed by the function continuing into `NewLFSMetaObject`, so the 401 is decorative
+- **Field test (2026-11-13, local lab, L3)**:
+  - Environment: CentOS 7 + `gitea-1.4.0-linux-amd64` (dl.gitea.com, 53,662,000 B) + sqlite, `gitea migrate` + `admin create-user`
+  - **Hard prerequisite: Git >= 2.1.2**. `modules/setting/setting.go:892` runs `LFS.StartServer = false` on an older version, the LFS routes are **never registered**, and every LFS request 404s. CentOS 7 ships git 1.8.3.1, so this trap is guaranteed
+  - Scanner check: before adding `X-PATHTRAV-JOIN`, `modules/lfs/` had **0 hits**; afterwards it hit `content_store.go:29 / 49 / 80 / 90`, i.e. the `Get` / `Put` / `Exists` / `Verify` methods
+  - Read side works: `oid = "...." + "../../../../../../" + <absolute path>` reads without credentials
+    | Target | Bytes | Verification |
     |---|---|---|
-    | `/etc/passwd` | 1108 | 与 `wc -c` 完全一致 |
-    | `/etc/shadow` | 699 | 含 root 的 `$6$` 哈希 |
-    | `custom/conf/app.ini` | 802 | 含 `SECRET_KEY` / `INTERNAL_TOKEN` / `LFS_JWT_SECRET` |
-  - **写侧不成立**：`content_store.go:67-72` 在 `os.Rename` 前比对 `sha256(content) == meta.Oid`。要写文件就必须让内容哈希等于 `Oid`，而 `Oid` 又决定路径 —— **「路径可控」与「内容可控」天然互斥**。实测 `PUT` → `500 {"message":"Content hash does not match OID"}`，目标文件未生成
-  - **唯一写侧副作用**：`MkdirAll` 在闸门之前（`content_store.go:56`）→ **任意目录创建**成立（实测新建 `/root/x/pwn/deep/dir`）
-- **为什么收录**：①"未授权 + 任意文件读"在 Go 生态里是高频真实形态，且拿 `/etc/shadow` 或 `app.ini` 后常能二次接管；②证明六相模型**不覆盖入口侧的净化缺失**，路径穿越必须单列 X 相；③记录一个真实环境闸门（git 版本），避免下次再从 404 开始猜；④**记录一次「名字说有 RCE、代码说只有读」的偏差** —— vulhub 目录名 `-rce` 不能当结论
-- **来源**：vulhub `gitea/1.4-rce` README、`https://security.szurek.pl/gitea-1-4-0-unauthenticated-rce.html`、`https://www.leavesongs.com/PENETRATION/gitea-remote-command-execution.html`
-- **与来源的偏差（重要）**：上述 writeup 声称 RCE，但 1.4.0 源码里 `Put()` 的 sha256 闸门使"任意文件写"不成立。**以源码为准**；若要复现写侧需换版本或另找 sink
+    | `/etc/passwd` | 1108 | exactly matches `wc -c` |
+    | `/etc/shadow` | 699 | contains root's `$6$` hash |
+    | `custom/conf/app.ini` | 802 | contains `SECRET_KEY` / `INTERNAL_TOKEN` / `LFS_JWT_SECRET` |
+  - **Write side does not hold**: `content_store.go:67-72` compares `sha256(content) == meta.Oid` before `os.Rename`. Writing a file requires the content hash to equal the `Oid`, while the `Oid` also determines the path — **"controllable path" and "controllable content" are inherently mutually exclusive**. Measured: `PUT` -> `500 {"message":"Content hash does not match OID"}`, target file not created
+  - **The only write-side effect**: `MkdirAll` sits before the gate (`content_store.go:56`) -> **arbitrary directory creation** holds (measured: created `/root/x/pwn/deep/dir`)
+- **Why included**: ① "unauthenticated + arbitrary file read" is a high-frequency real shape in the Go ecosystem, and obtaining `/etc/shadow` or `app.ini` often enables second-stage takeover; ② proves the six-phase model **does not cover sanitization gaps on the entrance side**, so path traversal must be a separate X phase; ③ records a real environmental gate (git version) so the next attempt does not start from a 404 and guess; ④ **records a case where "the name says RCE, the code says read only"** — a vulhub directory name ending in `-rce` is not a conclusion
+- **Source**: vulhub `gitea/1.4-rce` README, `https://security.szurek.pl/gitea-1-4-0-unauthenticated-rce.html`, `https://www.leavesongs.com/PENETRATION/gitea-remote-command-execution.html`
+- **Deviation from the sources (important)**: those writeups claim RCE, but in the 1.4.0 source the sha256 gate in `Put()` makes "arbitrary file write" impossible. **The source wins**; reproducing the write side requires a different version or a different sink
 
 
 ---
 
-## B. 已知伪造 / 污染样本（**不要引用**）
+## B. Known Fabricated / Contaminated Samples (**do not cite**)
 
-这些在搜索结果里出现频率很高，是 AI 生成的内容农场产物。收录在此是为了让你在别处再遇到时能立刻认出来。
+These appear frequently in search results; they are content-farm output produced by AI. They are listed here so you recognize them immediately when you meet them elsewhere.
 
-| 伪 CVE | 声称内容 | 为什么是假的 |
+| Fabricated CVE | Claimed content | Why it is fake |
 |--------|----------|-------------|
-| CVE-2024-34567 | gorilla/sessions 反序列化 RCE，影响 v1.2.0–v1.3.1 | 编号不存在；且 CookieStore 经 securecookie **强制 HMAC 签名**，不存在"未签名即 gob 解码"的路径 |
-| CVE-2024-45678 | k8s.io/client-go 证书校验绕过，v0.28.0–v0.29.3 | 编号不存在；描述的"静默设 InsecureSkipVerify=true"无对应代码 |
-| CVE-2024-56789 | spf13/cobra 命令注入 v1.7.0–v1.8.2 | 编号不存在；cobra 只做 flag 解析，不调用 shell |
-| CVE-2025-XXXX | Go text/template FuncMap 反射调用 RCE | 编号是占位符；正文自承"X" |
+| CVE-2024-34567 | gorilla/sessions deserialization RCE, affects v1.2.0-v1.3.1 | the ID does not exist; and CookieStore goes through securecookie which **enforces HMAC signing**, so there is no "unsigned means gob-decoded" path |
+| CVE-2024-45678 | k8s.io/client-go certificate validation bypass, v0.28.0-v0.29.3 | the ID does not exist; the described "silently sets InsecureSkipVerify=true" has no corresponding code |
+| CVE-2024-56789 | spf13/cobra command injection v1.7.0-v1.8.2 | the ID does not exist; cobra only parses flags and never calls a shell |
+| CVE-2025-XXXX | Go text/template FuncMap reflection call RCE | the ID is a placeholder; the text itself admits "X" |
 
-**识别特征**：
-1. 编号呈连续递增（34567 / 45678 / 56789）——真实 CVE 编号无此规律
-2. 给出"受影响版本矩阵"却没有对应 GHSA / OSV / NVD 链接
-3. 附"热补丁代码"但代码风格与上游不符（缩进、命名、错误处理习惯）
-4. 站点本身是 SEO 内容农场，同页混杂多个不相干领域
+**Identification features**:
+1. IDs increase consecutively (34567 / 45678 / 56789) — real CVE IDs show no such pattern
+2. An "affected version matrix" is given with no corresponding GHSA / OSV / NVD link
+3. A "hotfix patch" is attached whose style does not match upstream (indentation, naming, error-handling habits)
+4. The site itself is an SEO content farm, mixing unrelated domains on the same page
 
-**处置**：任何 CVE 引用前必须至少命中其一：`nvd.nist.gov/vuln/detail/<id>`、`cve.org/CVERecord?id=<id>`、厂商 advisory、OSV/GHSA 记录。查不到 → 不进报告。
-
----
-
-## C. 待核验（本轮未取得一手来源，勿引用）
-
-- runc / containerd / buildkit 系列容器逃逸（CVE-2024-21626 等）：属 Go 写的组件，但本轮未核对公告与修复 diff
-- Caddy / Traefik / Consul / Nomad / Vault / MinIO 的 RCE 类 CVE：未逐个核验
-- Go 标准库 `text/template` 历史 CVE-2023-24538：未核对影响面与真实利用条件
-
-补进来的条件：拿到一手公告 + 修复 diff + （可选）PoC，并按 A 节格式补齐 `相 / 链条 / 证据 / 来源`。
+**Handling**: before citing any CVE it must hit at least one of: `nvd.nist.gov/vuln/detail/<id>`, `cve.org/CVERecord?id=<id>`, a vendor advisory, or an OSV/GHSA record. Cannot find it -> it does not enter the report.
 
 ---
 
-## D. 怎么用这个库做训练
+## C. Pending Verification (no primary source obtained this round; do not cite)
 
-### D1. 差分扫描（最有效的单一练习）
-对同一个项目取两个 commit：漏洞版本与修复版本，各跑一次扫描器。
+- The runc / containerd / buildkit container-escape family (CVE-2024-21626 and others): Go-written components, but advisories and fix diffs were not checked this round
+- RCE-class CVEs in Caddy / Traefik / Consul / Nomad / Vault / MinIO: not verified individually
+- Go standard library `text/template` historical CVE-2023-24538: impact surface and real exploitation conditions not checked
+
+Conditions for promotion into section A: obtain the primary advisory + fix diff + (optionally) a PoC, then fill in `phase / chain / evidence / source` in section A's format.
+
+---
+
+## D. Using This Library for Training
+
+### D1. Differential scanning (the single most effective exercise)
+Take two commits of the same project — the vulnerable version and the fixed version — and run the scanner on each.
 
 ```bash
 git -C <repo> checkout <vuln-tag>   && python3 scripts/scan_sinks.py <repo> --out v-vuln.md
@@ -152,11 +150,11 @@ git -C <repo> checkout <fixed-tag> && python3 scripts/scan_sinks.py <repo> --out
 diff -u v-vuln.md v-fixed.md
 ```
 
-期望：修复版本上，对应相的候选**消失或形状改变**（例如 `hooks/` 字符串被移除、`--upload-path` 加了校验）。
-若两边完全一样 → 要么规则没覆盖这类，要么修复点在别处（常见：加了个前置校验而不是删 sink）。后者更有教学价值：**修复不一定动 sink**。
+Expected: on the fixed version the candidates for that phase **disappear or change shape** (for example the `hooks/` string is removed, or validation is added around `--upload-path`).
+If both sides are identical -> either the rule does not cover this class, or the fix landed elsewhere (common: a guard was added instead of deleting the sink). The latter is more instructive: **a fix does not have to touch the sink**.
 
-### D2. 规则回归
-每个案例登记一条元数据，作为扫描器的验收用例：
+### D2. Rule regression
+Register one metadata record per case as a scanner acceptance test:
 
 ```json
 {
@@ -165,15 +163,15 @@ diff -u v-vuln.md v-fixed.md
   "path": "E4", "sink": "routers/api/v1/repo/patch.go:<line>",
   "must_hit_rules": ["E4-HOOK-WRITE"],
   "must_not_survive_fix": true,
-  "note": "bare clone 根即 GIT_DIR，非 exec 类"
+  "note": "the bare clone root is GIT_DIR; not an exec-class case"
 }
 ```
 
-`must_hit_rules` 在 vuln commit 上必须命中；`must_not_survive_fix` 在 fixed commit 上必须不命中。两条都过，规则才算对这类漏洞有效。
+`must_hit_rules` must hit on the vuln commit; `must_not_survive_fix` must not hit on the fixed commit. Both passing is what makes the rule valid for this class.
 
-### D3. 反面练习（比正样本更重要）
-拿本文件 B 节的伪 CVE，去真实仓库里找它声称的代码。找不到是常态。
-练的是"在 30 秒内判定一个 CVE 引用不可信"的能力——这比多挖一个洞更有价值，因为报告写错一次就没人信你后面的十条。
+### D3. Negative exercise (more important than the positive samples)
+Take a fabricated CVE from section B and go looking in a real repository for the code it claims. Not finding it is the normal outcome.
+What you practice is "deciding within 30 seconds that a CVE citation is untrustworthy" — worth more than finding one more bug, because one wrong report costs you the credibility of the next ten.
 
-### D4. 靶场
-A2/A4 有公开 PoC 与 Docker 镜像，可在隔离环境复现。复现必须带**负样本对照**：同一请求，payload 中和后不应触发。没有对照的"复现成功"通常是巧合。
+### D4. Lab targets
+A2 and A4 have public PoCs and Docker images and can be reproduced in an isolated environment. Reproduction must include a **negative control**: the same request with the payload neutralized must not trigger. A "successful reproduction" without a control is usually a coincidence.

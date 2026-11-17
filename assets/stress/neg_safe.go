@@ -1,7 +1,9 @@
 package stress
 
-// 负样本：形似危险、实为安全的写法——通道命中它们是误报信号（容忍低危唤醒，不许误判为漏洞）
-// 每条带 // NEAR-MISS 标记与它"长得像"的规则
+// Negative samples: shapes that look dangerous but are safe. A channel hit here
+// is a false-positive signal (a low-severity wake-up is tolerated; calling it a
+// vulnerability is not).
+// Every case carries a // NEAR-MISS marker naming the rule it resembles.
 
 import (
 	"archive/zip"
@@ -14,29 +16,30 @@ import (
 	"time"
 )
 
-// N1 E1 反例：argv 分开传、无 shell——是路径拼接不是命令注入
+// N1 E1 counter-example: argv passed separately, no shell involved -- this is
+// path concatenation, not command injection.
 func readReport(name string) error {
-	return exec.Command("cat", "/reports/"+name).Run() // NEAR-MISS: E1-SHELL-C 不得命中
+	return exec.Command("cat", "/reports/"+name).Run() // NEAR-MISS: E1-SHELL-C must not fire
 }
 
-// N2 E1 反例：常量脚本
+// N2 E1 counter-example: constant script string.
 func reloadNginx() error {
-	return exec.Command("sh", "-c", "nginx -s reload").Run() // NEAR-MISS: 允许低危唤醒，判 KILL
+	return exec.Command("sh", "-c", "nginx -s reload").Run() // NEAR-MISS: low-severity wake-up allowed, verdict KILL
 }
 
-// N3 E2 反例：embed FS 模板 + 纯函数 FuncMap
+// N3 E2 counter-example: embedded FS template + pure-function FuncMap.
 var pageT = template.Must(template.New("p").
 	Funcs(template.FuncMap{"upper": func(s string) string { return s }}).
-	ParseFS(os.DirFS("templates"), "*.tmpl")) // NEAR-MISS: E2-TPL-USERSTRING 不得命中
+	ParseFS(os.DirFS("templates"), "*.tmpl")) // NEAR-MISS: E2-TPL-USERSTRING must not fire
 
-// N4 E2 反例：time.Parse 不是模板解析
+// N4 E2 counter-example: time.Parse is not template parsing.
 func parseTime(s string) (time.Time, error) {
-	return time.Parse(time.RFC3339, s) // NEAR-MISS: E2-TPL-USERSTRING 不得命中（历史噪声）
+	return time.Parse(time.RFC3339, s) // NEAR-MISS: E2-TPL-USERSTRING must not fire (historical noise)
 }
 
-// N5 E4 反例：os.OpenRoot 结构性修复（Go ≥1.24）
+// N5 E4 counter-example: os.OpenRoot is a structural fix (Go >= 1.24).
 func safeUnzip(dst string, zr *zip.Reader) error {
-	root, err := os.OpenRoot(dst) // NEAR-MISS: X/E4 判据应直接判修复
+	root, err := os.OpenRoot(dst) // NEAR-MISS: X/E4 criterion should rule this fixed outright
 	if err != nil {
 		return err
 	}
@@ -51,18 +54,18 @@ func safeUnzip(dst string, zr *zip.Reader) error {
 	return nil
 }
 
-// N6 SQLi 反例：值绑定
+// N6 SQLi counter-example: value binding.
 func findSafe(db *sql.DB, name string) (*sql.Rows, error) {
-	return db.Query("SELECT * FROM t WHERE name = ?", name) // NEAR-MISS: KW-SQLI 不得命中
+	return db.Query("SELECT * FROM t WHERE name = ?", name) // NEAR-MISS: KW-SQLI must not fire
 }
 
-// N7 SECRET 反例：key 来自环境变量且校验长度
+// N7 SECRET counter-example: key comes from the environment and its length is checked.
 func newStore() *cookieStore {
 	k := os.Getenv("SESSION_KEY")
 	if len(k) < 32 {
 		panic("weak key")
 	}
-	return newCookieStore([]byte(k)) // NEAR-MISS: KW-SECRET 不得命中
+	return newCookieStore([]byte(k)) // NEAR-MISS: KW-SECRET must not fire
 }
 
 var _ = filepath.Join

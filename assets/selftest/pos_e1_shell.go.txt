@@ -1,6 +1,7 @@
 package selftest
 
-// 正样本：shell 解释器 + 拼接脚本串。规则 E1-SHELL-C 必须命中。
+// Positive sample: shell interpreter plus a concatenated script string. Rule
+// E1-SHELL-C must fire.
 import (
 	"net/http"
 	"os/exec"

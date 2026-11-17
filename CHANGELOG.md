@@ -1,60 +1,102 @@
 # Changelog
 
-本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
-版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
+This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and its version
+numbers follow [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Changed
+
+- **The whole repository is now English.** Every reference document, root document, prompt, script
+  string and test-sample comment was rewritten in English, following the bilingual layout used by
+  `ooda_skill`: English is the single authoritative text, with Chinese kept as side files
+  (`SKILL.zh-CN.md`, `README.zh-CN.md`) rather than mixed into the same file.
+  The 15 Chinese trigger phrases in the `description` frontmatter field are deliberately preserved:
+  they are the activation surface for Chinese-speaking users, and narrowing them would silently
+  reduce recall on real requests.
+- `scripts/kb_retrieve.py`: the fingerprint labels, the BM25 fallback query (`<framework> gate
+  falsify`) and every printed string are English. The Chinese 2-gram tokenizer is retained, so a
+  Chinese-language query still tokenizes; since the corpus is now English, English queries retrieve best.
+- `scripts/scan_sinks.py`: the rule `why` fields and the whole Markdown report (headers, table
+  columns, empty-result wording) are English. Rule IDs, regexes and matching semantics are unchanged.
+
+### Verified (after the English migration)
+
+- `scripts/test_scan_sinks.py`: 24/24 assertions still pass, including all 7 mutation assertions.
+- `assets/stress` scan: still 12 candidates (4 with a same-function source), per-phase counts
+  unchanged at `E1=4 / E2=2 / E4=1 / E5=2 / X=3`.
+- `stress_kwcheck.py`: still parses 29 regexes and still reports 16 matching lines.
+- `kb_retrieve.py --list`: still 200 chunks / 24,921 tokens; the `--project` fingerprint channel still
+  pins 2 chunks (`1. Framework Fingerprint`, `2. Entry Shapes`) — proving the English headings in
+  `route-map.md` and the `FINGERPRINTS` table did not drift apart.
+- `SKILL.md`: 29 internal links, 0 broken.
 
 ## [0.1.0] - 2026-11-17
 
-首个公开版本。合并两条独立审计谱系：8 维方法论（面貌测绘 / 认证授权 / 注入面 / 能力评估 /
-只读执行策略 / 报告契约）与 RCE 狩猎模型（六相模型 / sink 规则 / 可达性 / 证据门 / 案例库）。
+First public release. Merges two independent audit lineages: the 8-dimension methodology (surface
+mapping / authentication and authorization / injection surface / capability assessment / read-only
+execution policy / report contract) and the RCE hunting model (six-phase model / sink rules /
+reachability / evidence gates / case library).
 
 ### Added
 
-- **主文件** `SKILL.md`：Phase 0-6 工作流、13 维度 × 工具对照表、不可协商项、输出契约摘要
-- **扫描器** `scripts/scan_sinks.py`：27 条 sink 规则，覆盖 E1 命令拼接 / E2 模板注入 /
-  E3 反序列化 / E4 写入即执行 / E5 参数注入 / E6 动态加载 / X 路径穿越；
-  输出 Markdown + JSON，支持 `--min-severity` / `--include-vendor` / `--include-tests`
-- **关键词特征库** `references/vuln-features.md`：13 类漏洞，每类给唤醒正则、真阳性形态、
-  噪声形态、证伪判据、深读指针——补齐 SQLi / SSRF / 越权 / 凭据 / 内存 / 归档六类无机械规则的空档
-- **报告契约** `references/report-template.md`：8 节骨架 + 四态覆盖矩阵（in-scope assessed /
-  not-assessed / out-of-scope / off）+ 五档裁决计数 + 计数加总校验 + 交付前 10 项检查
-- **变异自测** `scripts/test_scan_sinks.py`：24 条断言（7 正 + 9 负 + 7 变异 + 1 空文件），
-  变异测试要求"抠掉规则锚点后样本必须不再命中"，防止永真断言
-- **对抗语料** `assets/stress/`：13 个植入正点 + 7 个近似反例 + `stress_kwcheck.py`
-  （从 `vuln-features.md` 直接解析正则做回归，单一事实来源防文档漂移）
-- **检索层** `scripts/kb_retrieve.py`：references 的两通道检索（BM25 + 指纹映射），
-  200 chunk 全量可查，审计时按需取 3-4k token
-- **只读护栏** `references/execution-policy.md`：默认不 build / run / test / 生成 PoC / 发请求；
-  依赖获取是唯一窄例外（隔离缓存 + 锁定版本 + `GOTOOLCHAIN=local`）
-- **案例库** `references/case-library.md`：证据分 `L3-repro` / `L3-lit` / `L2`，
-  附伪 CVE 识别表与"待核验（勿引用）"分区
-- **CI**：GitHub Actions 三平台 × 两 Python 版本跑断言、关键词回归、负样本零误报
+- **Main file** `SKILL.md`: Phase 0-6 workflow, 13-dimension × tooling table, non-negotiables, output contract summary
+- **Scanner** `scripts/scan_sinks.py`: 27 sink rules covering E1 command concatenation / E2 template
+  injection / E3 deserialization / E4 write-then-execute / E5 argument injection / E6 dynamic loading /
+  X path traversal; emits Markdown + JSON, supports `--min-severity` / `--include-vendor` / `--include-tests`
+- **Keyword feature library** `references/vuln-features.md`: 14 vulnerability classes, each with wake-up
+  regexes, true-positive shapes, noise shapes, falsification criteria and deep-read pointers — closing the
+  gap for SQLi / SSRF / authorization / credentials / memory / archive, which have no mechanical rules
+- **Report contract** `references/report-template.md`: 8-section skeleton + four-state coverage matrix
+  (in-scope assessed / not-assessed / out-of-scope / off) + five-verdict counts + count reconciliation +
+  10 pre-delivery checks
+- **Mutation self-test** `scripts/test_scan_sinks.py`: 24 assertions (7 positive + 9 negative + 7
+  mutation + 1 empty file); mutation testing requires that "removing the rule anchor makes the sample
+  stop matching", which rules out vacuous assertions
+- **Adversarial corpus** `assets/stress/`: 13 planted positive points + 7 near-miss counter-examples +
+  `stress_kwcheck.py` (parses regexes straight out of `vuln-features.md` for regression, a single source
+  of truth that prevents documentation drift)
+- **Retrieval layer** `scripts/kb_retrieve.py`: two-channel reference retrieval (BM25 + fingerprint
+  mapping), 200 chunks all queryable, pulling 3-4k tokens on demand during an audit
+- **Read-only guardrail** `references/execution-policy.md`: by default no build / run / test / PoC
+  generation / request sending; dependency fetching is the single narrow exception (isolated cache +
+  pinned versions + `GOTOOLCHAIN=local`)
+- **Case library** `references/case-library.md`: evidence split into `L3-repro` / `L3-lit` / `L2`, with a
+  fake-CVE identification table and an "unverified (do not cite)" partition
+- **CI**: GitHub Actions, three platforms × two Python versions, running the assertions, the keyword
+  regression and the zero-false-positive negative samples
 
 ### Fixed
 
-压力测试两轮共 13 项发现，修复 12 项（1 项记为已知限制）：
+Two rounds of stress testing produced 13 findings; 12 were fixed (1 recorded as a known limitation):
 
-- **AUTHZ 关键词叫不醒"401 装饰化"**（写了响应但缺 `return`，函数继续执行）——补
-  `http.Error(...40[13])` / `AbortWithStatus` 唤醒词与控制流判据
-- **`E2-FUNCMAP-EXEC` 锚不到独立 `var` 定义的 FuncMap**（真实代码常把 FuncMap 定义与
-  `.Funcs()` 调用分开）——新增第 27 条规则 `E2-FUNCMAP-DEF`，配正负样本与变异断言
-- **SSRF 关键词裸 `import` 命中一切 Go 文件的 import 行**——改为形态词
-- **扫描器报告标题残留旧标识**——清理
-- `E1-SHELL-C` 的噪声描述与实现不一致（实现已有 `none_of` 常量过滤，文档仍写"会误报"）
-- `ZIPSLIP` 参数传入形态漏检（由 `X-PATHTRAV-JOIN` 兜底，已在规则表注明）
-- `vuln-features.md` 关键词计数漂移（27 → 29）、类数声明（13 → 14）、规则数声明（26 → 27）
-- `scan_sinks.py --help` 描述与新定位不一致
+- **The AUTHZ keyword could not wake on "decorative 401"** (response written but the `return` is missing,
+  so the function continues) — added `http.Error(...40[13])` / `AbortWithStatus` wake-up terms and a
+  control-flow criterion
+- **`E2-FUNCMAP-EXEC` could not anchor a FuncMap defined as a standalone `var`** (real code often separates
+  the FuncMap definition from the `.Funcs()` call) — added the 27th rule `E2-FUNCMAP-DEF`, with positive
+  and negative samples and a mutation assertion
+- **The SSRF keyword matched the bare `import` line of every Go file** — changed to shape words
+- **The scanner report title carried a stale identifier** — cleaned up
+- The noise description of `E1-SHELL-C` contradicted the implementation (the code already had a `none_of`
+  constant filter while the docs still said "will false-positive")
+- The pass-through parameter shape of `ZIPSLIP` was missed (covered by `X-PATHTRAV-JOIN`, now noted in the
+  rule table)
+- Count drift in `vuln-features.md`: keyword count (27 → 29), class count (13 → 14), rule count (26 → 27)
+- The `scan_sinks.py --help` description no longer matched the skill's positioning
 
 ### Verified
 
-- 24/24 断言通过；植入点 13/13 捕获（扫描器 8 + 关键词 5，通道互补）
-- 7 个负样本扫描器命中 **0** 次
-- 报告契约判别力：回放一份真实审计报告，10 项检查拦住 2 项——拦住的恰好是已知缺陷
-- 可移植性：纯 stdlib、无硬编码路径、任意 cwd 可运行、无 BOM / CRLF
+- 24/24 assertions pass; 13/13 planted points captured (8 by the scanner + 5 by keywords, complementary channels)
+- The 7 negative samples produce **0** scanner hits
+- Report-contract discriminating power: replaying a real audit report, 10 checks caught 2 issues — and the
+  2 caught were exactly the known defects
+- Portability: pure stdlib, no hardcoded paths, runs from any cwd, no BOM / CRLF
 
 ### Known limitations
 
-- 机械规则只覆盖 E/X 相；SQLi / SSRF / 越权 / 凭据无规则兜底
-- 真实项目抽样仅 1 个（Woodpecker CI：57 候选 → 0 确证），不构成召回率证据
-- 报告契约第 2 项（行号回读）只能验证"方法声明"，无法验证引用正确性
-- 关键词通道依赖 `rg` 在 PATH 中
+- Mechanical rules cover only the E/X phases; SQLi / SSRF / authorization / credentials have no rule backstop
+- Only one real project sampled (Woodpecker CI: 57 candidates → 0 confirmed); not evidence of recall
+- Report-contract check 2 (line-number re-read) can only verify "the method was declared", not that a
+  citation is correct
+- The keyword channel depends on `rg` being on PATH

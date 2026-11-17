@@ -6,9 +6,11 @@ import (
 	"strings"
 )
 
-// 负样本：FuncMap 全是纯函数，同文件里另有常量 exec 调用。
-// E2-FUNCMAP-DEF 不得命中（FuncMap 键名与键值都无执行能力），
-// 常量 exec 也不得被 E1 命中（none_of 常量过滤）。
+// Negative sample: every FuncMap entry is a pure function, and the same file also
+// holds a constant exec call.
+// E2-FUNCMAP-DEF must stay silent (neither the FuncMap keys nor the values carry
+// execution capability), and the constant exec call must not be hit by E1 either
+// (the none_of constant filter).
 var safeFmap = template.FuncMap{
 	"upper": func(s string) string { return strings.ToUpper(s) },
 }

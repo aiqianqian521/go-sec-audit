@@ -2,9 +2,11 @@ package driver
 
 import "context"
 
-// 接口方法名叫 Extract，但它不是归档解压，不含 Zip Slip 语义。
-// 盲测发现：alist 的 22 条 Tier B、cloudreve 的 18 条 Tier B 全部是这类
-// "driver.Extract 方法定义" 被误判成解压漏洞，故立此负样本。
+// The interface method happens to be named Extract, but it is not archive
+// extraction and carries no Zip Slip semantics.
+// A blind test found alist's 22 Tier B hits and cloudreve's 18 Tier B hits were all
+// of this kind: a driver.Extract method definition misread as an extraction
+// vulnerability. Hence this negative sample.
 type Extractor interface {
 	Extract(ctx context.Context, obj []byte, args Args) ([]byte, error)
 }

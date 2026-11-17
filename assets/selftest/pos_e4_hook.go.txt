@@ -1,6 +1,7 @@
 package selftest
 
-// 正样本：写入 git hooks 目录（write-then-execute）。规则 E4-HOOK-WRITE 必须命中。
+// Positive sample: writes into the git hooks directory (write-then-execute). Rule
+// E4-HOOK-WRITE must fire.
 import (
 	"os"
 	"path/filepath"

@@ -7,7 +7,9 @@ on:
   workflow_dispatch:
 
 env:
-  # Windows runner 控制台默认是 charmap 编码，脚本里的中文输出会抛 UnicodeEncodeError
+  # The Windows runner console defaults to the charmap codec, so any non-ASCII output
+  # (a report echoes the absolute path it scanned, which may contain non-ASCII) would
+  # raise UnicodeEncodeError. Force UTF-8 for all three platforms.
   PYTHONIOENCODING: utf-8
 
 jobs:
@@ -18,8 +20,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.9", "3.12"]
         exclude:
-          # ubuntu-latest 已是 24.04，setup-python 没有 3.9 构建；
-          # Linux 上的 3.9 覆盖交给下面补的 ubuntu-22.04 这一路
+          # ubuntu-latest is already 24.04 and setup-python has no 3.9 build for it;
+          # Linux 3.9 coverage is handled by the ubuntu-22.04 leg added below
           - os: ubuntu-latest
             python: "3.9"
         include:
@@ -33,28 +35,28 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: 显示 Python 版本
+      - name: Show Python version
         run: python --version
 
-      - name: 规则自测（含变异测试：改坏规则必须让断言失败）
+      - name: Rule self-test (incl. mutation: breaking a rule must fail the assertions)
         run: python scripts/test_scan_sinks.py
 
-      - name: 关键词通道回归（从 vuln-features.md 解析正则）
+      - name: Keyword-channel regression (parses regexes from vuln-features.md)
         run: python assets/stress/stress_kwcheck.py
 
-      - name: 扫描器冒烟（植入语料应产出候选）
+      - name: Scanner smoke test (the planted corpus must yield candidates)
         run: python scripts/scan_sinks.py assets/stress --quiet
 
-      - name: 检索器冒烟
+      - name: Retriever smoke test
         run: python scripts/kb_retrieve.py --list
 
-      - name: 断言负样本零误报
+      - name: Assert zero false positives on the negative sample
         shell: bash
         run: |
           out=$(python scripts/scan_sinks.py assets/stress 2>&1)
           if echo "$out" | grep -q "neg_safe.go"; then
-            echo "::error::neg_safe.go 被扫描器命中，负样本误报"
+            echo "::error::neg_safe.go was hit by the scanner: negative-sample false positive"
             echo "$out" | grep "neg_safe.go"
             exit 1
           fi
-          echo "负样本零误报"
+          echo "zero false positives on the negative sample"

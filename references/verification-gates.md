@@ -1,143 +1,143 @@
-# 证据门禁：L0 → L3
+# Evidence Gates: L0 -> L3
 
-一条 Go RCE 结论的价值取决于它能不能被**证伪**。本文件定义每一级需要什么、缺什么就降级、以及发布前的终检。
+The value of a Go RCE conclusion depends on whether it can be **falsified**. This file defines what each level requires, when to downgrade, and the final check before publishing.
 
-原则：**宁可写"未验证"，不要写"疑似高危"**。前者是状态，后者是判断——判断错了，整份报告都失去信用。
+Principle: **write "not verified" rather than "suspected critical"**. The former is a state, the latter a judgment — and a wrong judgment costs the whole report its credibility.
 
 ---
 
-## 等级定义
+## Tier Definitions
 
-| 级 | 名称 | 已证明 | 允许的措辞 | 报告位置 |
+| Tier | Name | Proven | Allowed wording | Where in the report |
 |----|------|--------|-----------|---------|
-| L0 | SUSPECT | 命中 sink | 候选 / candidate | 附录 |
-| L1 | REACHABLE | source→sink 路径成立，入口与认证态已确认 | 疑似可达 | 正文（标注 L1） |
-| L2 | INJECTABLE | 注入字符能穿过全部变换，payload 形态成立 | 疑似漏洞 | 正文 |
-| L3 | DEMONSTRATED | 隔离环境复现 + 负样本对照 | 已复现 | 正文（可作为结论） |
+| L0 | SUSPECT | sink hit | candidate | appendix |
+| L1 | REACHABLE | a source->sink path holds, entry point and auth state confirmed | suspected reachable | body (tagged L1) |
+| L2 | INJECTABLE | injection characters survive every transform, payload shape holds | suspected vulnerability | body |
+| L3 | DEMONSTRATED | reproduced in an isolated environment + negative control | reproduced | body (may serve as a conclusion) |
 
-**L0 写成漏洞 = 流程失败**，不是风格问题。
-
----
-
-## L1 检查表
-
-全部打勾才升 L1：
-
-- [ ] 入口已确认**真的注册**（路由表里有，不是只定义了 handler）
-- [ ] 认证态已确认（读注册处的中间件链，不是读 handler 内部）
-- [ ] 数据流每一跳有 `path:line`，不跳步
-- [ ] 中间没有"看起来是校验但其实是格式化"的函数（`TrimSpace` 不是校验）
-- [ ] 目标是编译进来的（过了 build tag 检查）
-- [ ] 调用点不是死代码（`rg` 调用点数 > 0，且不在 `_test.go`）
-
-任何一项缺 → 停在 L0，报告里注明缺哪项。
+**Writing an L0 as a vulnerability is a process failure**, not a style issue.
 
 ---
 
-## L2 检查表
+## L1 Checklist
 
-在 L1 之上：
+All boxes must be ticked before promoting to L1:
 
-- [ ] 写出**具体 payload 字符串**，不是"可构造恶意输入"
-- [ ] 列出 payload 必须存活的字符（空格 / `;` / `|` / `{{` / `..` / 前导 `-` / `/`）
-- [ ] 逐个追这些字符经过的每一次变换，给出"未被剥离"的 `path:line` 依据
-- [ ] 说明为什么**不能**用更简单的解释（比如其实是路径穿越、其实是 XSS）
-- [ ] 说明前置条件：权限、配置、平台、依赖版本
+- [ ] The entry point is confirmed to be **actually registered** (present in the route table, not merely a defined handler)
+- [ ] Auth state confirmed (read the middleware chain at the registration site, not inside the handler)
+- [ ] Every hop of the data flow has a `path:line`, no skipped steps
+- [ ] No function along the way "looks like validation but is formatting" (`TrimSpace` is not validation)
+- [ ] The target is actually compiled in (passed the build-tag check)
+- [ ] The call site is not dead code (call-site count from `rg` > 0, and not inside `_test.go`)
 
-**失败样例**：
-> "`filename` 未过滤，可能导致命令注入" — 无 payload、无字符存活分析 → 只能算 L1。
-
-**通过样例**：
-> `name=form` 值 `x;id>/tmp/p`，经 `hooks.go:31`（无过滤）→ `hooks.go:37`（无过滤）→ `hooks.go:41` `exec.Command("sh","-c","tar czf out.tgz "+dir)`。`;`、空格、`/` 均未被剥离。前置：任意登录用户。
+Any missing item -> stay at L0 and state which item is missing.
 
 ---
 
-## L3 检查表
+## L2 Checklist
 
-- [ ] 隔离环境（容器/VM），无出网（或已声明有出网并有理由）
-- [ ] 冻结 commit，记录 build 命令与 Go 版本
-- [ ] payload 与观察到的副作用一一对应（`touch /tmp/p` → 文件存在）
-- [ ] **负样本对照**：同一请求，payload 中和（`x;id>/tmp/p` → `x`）后不触发
-- [ ] 至少一次重复，结果一致
-- [ ] 部署用户身份已确认（决定影响面）
+On top of L1:
 
-缺负样本对照 = 未复现，只是"碰巧有反应"。常见的假复现：payload 里带的字符串出现在日志里、缓存命中、上一轮测试残留文件。
+- [ ] Write the **concrete payload string**, not "a malicious input could be constructed"
+- [ ] List the characters the payload must keep alive (space / `;` / `|` / `{{` / `..` / leading `-` / `/`)
+- [ ] Trace each of those characters through every transform and give the `path:line` evidence that it is **not** stripped
+- [ ] Explain why a **simpler** explanation does not apply (maybe it is really path traversal, maybe XSS)
+- [ ] State the preconditions: permissions, configuration, platform, dependency version
 
-**只用无害验证**：`id`、`touch /tmp/poc`、`echo`。不要反向 shell、不要下载外部 payload、不要改系统状态。
+**Failing example**:
+> "`filename` is unfiltered and may lead to command injection" — no payload, no character-survival analysis -> this is only L1.
 
-### L3 排障顺序（响应为空 / 没有副作用时，按这个顺序查，别乱猜）
+**Passing example**:
+> form value `name` = `x;id>/tmp/p`, through `hooks.go:31` (no filter) -> `hooks.go:37` (no filter) -> `hooks.go:41` `exec.Command("sh","-c","tar czf out.tgz "+dir)`. `;`, space and `/` are all preserved. Precondition: any logged-in user.
 
-1. **看状态码的语义，不要看"成没成"**
-   - 读类 handler：`200` 说明 `os.Open` **已成功**（打不开会 404）；`200 + 0 字节` = 打开成功但被长度闸门截断
-   - 写类 handler：`200 + 空体` 也可能是**方法没匹配上任何分支**（路由存在但 handler 对非预期方法静默落空）
-2. **确认请求方法真的是你以为的那个**
-   - `curl --data-binary` 隐含 **POST**，不是 PUT。务必显式 `-X PUT`
-   - 方法不对时，路由 `m.Any` 命中但 handler 内部 `if method == ...` 全不成立 → 静默 200
-3. **确认 `Content-Length` 是谁设的**
-   - 若 handler 用 DB/入参里的 `Size` 设 `Content-Length`，而真实内容比它长：Go 的 `http.response.Write` 会**整块丢弃**并返回 `ErrContentLength`，客户端拿到 0 字节
-   - 对策：把 `Size` 抬到远大于目标文件，接受响应被截断（curl 退出码 18），已发出的字节仍然有效
-4. **区分"副作用没发生"和"副作用被别人撤销了"**
-   - 见 `defer os.Remove(tmpPath)`、事务回滚、失败分支的补偿删除
-5. **别信上一轮留下的状态**
-   - DB 里的唯一键复用会让第二次 `POST` 走"已存在"分支（Gitea 实测返回 404），于是本轮验证用的是**上一轮的 `Size`**。每轮先清理测试数据
+---
+
+## L3 Checklist
+
+- [ ] Isolated environment (container/VM), no outbound network (or outbound declared with a reason)
+- [ ] Commit pinned, build command and Go version recorded
+- [ ] Each payload maps one-to-one to an observed side effect (`touch /tmp/p` -> the file exists)
+- [ ] **Negative control**: the same request with the payload neutralized (`x;id>/tmp/p` -> `x`) does not trigger
+- [ ] Repeated at least once with identical results
+- [ ] Deployment user identity confirmed (this decides the impact)
+
+Missing the negative control = not reproduced, merely "something happened". Common fake reproductions: a string from the payload appearing in a log, a cache hit, a leftover file from the previous test run.
+
+**Use harmless verification only**: `id`, `touch /tmp/poc`, `echo`. No reverse shells, no downloading external payloads, no changing system state.
+
+### L3 Troubleshooting Order (when the response is empty or there is no side effect, check in this order instead of guessing)
+
+1. **Read the status code's meaning, not "did it work"**
+   - Read-side handler: `200` means `os.Open` **succeeded** (a failure would be 404); `200 + 0 bytes` = opened fine but truncated by a length gate
+   - Write-side handler: `200 + empty body` may also mean **the method matched no branch** (the route exists but the handler falls through silently for an unexpected method)
+2. **Confirm the request method is really the one you think**
+   - `curl --data-binary` implies **POST**, not PUT. Always pass `-X PUT` explicitly
+   - With the wrong method, `m.Any` matches the route but every `if method == ...` inside the handler fails -> silent 200
+3. **Confirm who sets `Content-Length`**
+   - If the handler sets `Content-Length` from a `Size` in the DB or the request, and the real content is longer: Go's `http.response.Write` **discards the whole block** and returns `ErrContentLength`, so the client receives 0 bytes
+   - Workaround: raise `Size` far above the target file and accept a truncated response (curl exit code 18); the bytes already sent remain valid
+4. **Separate "the side effect never happened" from "the side effect was undone"**
+   - Look for `defer os.Remove(tmpPath)`, transaction rollback, compensating deletes on failure branches
+5. **Do not trust state left by the previous run**
+   - Reusing a unique key in the DB makes the second `POST` take the "already exists" branch (measured in Gitea: returns 404), so this run validates against **last run's `Size`**. Clean the test data before each run
 
 
 ---
 
-## 不构成证据的东西
+## What Does Not Count as Evidence
 
-机器会把这些当成"我很确定"，实际上一个都不是证据：
+A model will treat these as "I am quite sure"; not one of them is evidence:
 
-| 看似证据 | 为什么不是 |
+| Looks like evidence | Why it is not |
 |---------|-----------|
-| 扫描器命中 / 规则分数 | 规则只匹配文本形状 |
-| `govulncheck` 报告依赖有 CVE | 依赖有洞 ≠ 你调用了那条路径，也不等于可利用 |
-| CVE 描述说 "allows RCE" | 描述是 PR，补丁才是事实 |
-| 靶场目录名 / 漏洞库标签带 `-rce` | 命名是归类习惯（`vulhub/gitea/1.4-rce` 实测只有任意文件读）。影响面以源码闸门为准 |
-| 有公开 PoC 仓库 | PoC 存在 ≠ 你的目标版本/配置受影响 |
-| 模型说"这明显可被利用" | 模型的置信度没有证据效力 |
-| 代码里出现 `unsafe` / `reflect` | Go 里这两者通常不通向 RCE |
-| 报错信息里出现命令输出 | 可能是日志回显，不是执行 |
+| A scanner hit / rule score | the rule matches text shape only |
+| `govulncheck` reports a dependency CVE | a vulnerable dependency != you call that path, and != exploitable |
+| The CVE description says "allows RCE" | the description is PR, the patch is fact |
+| A lab directory name / database label containing `-rce` | naming is a filing habit (`vulhub/gitea/1.4-rce` measured as file read only). Impact follows the source-level gate |
+| A public PoC repository exists | a PoC existing != your version/configuration is affected |
+| The model says "this is obviously exploitable" | model confidence has no evidentiary weight |
+| `unsafe` / `reflect` appears in the code | in Go these usually do not lead to RCE |
+| Command output appears in an error message | may be log echo, not execution |
 
 ---
 
-## 降级与删除
+## Downgrade and Deletion
 
-发现判错时，**显式记录**，不要静默移除：
+When a judgment turns out wrong, **record it explicitly**; never remove it silently:
 
 ```markdown
-- F3 候选 E1-SHELL-C hooks.go:88 — 降级 L0→删除
-  原因：`shellescape.Quote(dir)` 已在 cmd.go:120 应用；注入字符 `;` 被转义为 `';'`
-  证据：cmd.go:120
+- F3 candidate E1-SHELL-C hooks.go:88 — downgrade L0 -> delete
+  Reason: `shellescape.Quote(dir)` is already applied at cmd.go:120; the injection character `;` becomes `';'`
+  Evidence: cmd.go:120
 ```
 
-静默删掉的条目，和"根本没看"在报告里长得一模一样。评审无法区分，会按"漏检"处理 —— 这是对的，因为从外部看两者确实不可区分。
+A silently deleted entry looks exactly like "never looked at it" in the report. A reviewer cannot tell the difference and will treat it as a miss — correctly, because from the outside the two are indeed indistinguishable.
 
 ---
 
-## 发布前终检
+## Pre-Publish Final Check
 
-- [ ] 每条结论都有等级，L0/L1 没有出现在"漏洞"章节
-- [ ] 每个 `path:line` 都**回读**过（`sed -n 'Np' file`），不是凭 grep 输出记的
-- [ ] 版本号、CVE 编号、影响范围都有可点开的一手来源；查不到的就删
-- [ ] 覆盖缺口写明：未扫的目录、未覆盖的平台、未跑的构建标签
-- [ ] 没有贴真实密钥、Token、生产数据、完整利用代码
-- [ ] 修复建议对应到**根因相**（E4 的洞不要建议"转义 shell 参数"）
-- [ ] 报告里保留了被否掉的候选
+- [ ] Every conclusion has a tier; no L0/L1 appears in the "vulnerabilities" section
+- [ ] Every `path:line` has been **read back** (`sed -n 'Np' file`), not recorded from grep output
+- [ ] Version numbers, CVE IDs and affected ranges all have a clickable primary source; anything unverifiable is deleted
+- [ ] Coverage gaps are stated: directories not scanned, platforms not covered, build tags not exercised
+- [ ] No real keys, tokens, production data or complete exploit code pasted
+- [ ] The remediation targets the **root phase** (do not suggest "escape the shell argument" for an E4 bug)
+- [ ] Rejected candidates are preserved in the report
 
-最后一条最容易被省略，也最影响可信度：一份只有"确认漏洞"的报告，读者无法判断你是**查过了**还是**没想到**。
+The last item is the most often omitted and the most damaging to credibility: a report listing only "confirmed vulnerabilities" leaves the reader unable to tell whether you **checked** or **never thought of it**.
 
 ---
 
-## 修复建议要对应相
+## Remediation Must Match the Phase
 
-| 相 | 有效修复 | 无效修复（常见错误） |
+| Phase | Effective fix | Ineffective fix (common mistake) |
 |----|---------|--------------------|
-| E1 | 参数分开传 / 去掉 shell / 白名单 | 转义 `;`（挡不住 `$()`、换行、编码） |
-| E2 | 模板文本固定 + FuncMap 白名单 | 转义数据（数据不是门） |
-| E3 | 换 JSON / 签名校验 / 最小化解码结果用途 | 限制 body 大小（挡不住类型实例化） |
-| E4 | 路径白名单 + 前缀校验 + 禁止写入执行位置 + 降权 | 只改权限位（cron 不需要 x） |
-| E5 | 加 `--` 分隔符 / 校验前导 `-` / 白名单 | 转义空格（选项注入不需要空格） |
-| E6 | 固定加载路径 + 签名校验 + 禁写 | 限制扩展名 |
+| E1 | pass arguments separately / drop the shell / allowlist | escaping `;` (does not stop `$()`, newlines, encodings) |
+| E2 | fix the template text + FuncMap allowlist | escaping the data (data is not the door) |
+| E3 | switch to JSON / signature verification / minimize what the decoded result feeds | limiting body size (does not stop type instantiation) |
+| E4 | path allowlist + prefix check + forbid writes to executable locations + drop privileges | only changing permission bits (cron needs no x bit) |
+| E5 | add a `--` separator / reject a leading `-` / allowlist | escaping spaces (argument injection needs no space) |
+| E6 | fix the load path + signature verification + forbid writes | restricting the extension |
 
-建议写错，等于告诉开发"这个洞你们不用真修"。
+A wrong remediation tells the developers "you do not really need to fix this".

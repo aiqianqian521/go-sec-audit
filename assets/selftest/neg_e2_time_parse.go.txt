@@ -5,13 +5,15 @@ import (
 	"time"
 )
 
-// 时间解析不是模板求值：time.Parse 只返回 time.Time，永远评不出代码。
-// 盲测发现 gogs 的 21 条 Tier A 里有 18 条是这类误报，故立此负样本。
+// Parsing a timestamp is not template evaluation: time.Parse only returns a
+// time.Time and can never evaluate code.
+// A blind test found 18 of gogs' 21 Tier A hits were exactly this false positive,
+// which is why this negative sample exists.
 func Since(raw string) (time.Time, error) {
 	return time.Parse(time.RFC3339, raw)
 }
 
-// 解析 URL 不是模板求值：url.Parse 只返回 *url.URL。
+// Parsing a URL is not template evaluation either: url.Parse only returns *url.URL.
 func Target(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -20,7 +22,7 @@ func Target(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-// 解析主机地址同理，产出的是 IP 不是可执行文本。
+// Same for parsing a host address: the product is an IP, not executable text.
 func Host(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {

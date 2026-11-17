@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""kb_retrieve.py -- go-sec-audit 的符号检索层 (stdlib only, py3.6+)
+"""kb_retrieve.py -- symbol retrieval layer for go-sec-audit (stdlib only, py3.6+)
 
-问题：references/ 有 8 份文档、2000+ 行。全读挤爆上下文，全不读等于没有。
-本脚本把文档切成 chunk，提供两条互相独立的检索通道：
+Problem: references/ holds 24 documents and 3000+ lines. Reading all of it blows
+the context; reading none of it is the same as not having it.
+This script cuts the documents into chunks and exposes two independent channels:
 
-  通道 A 指纹唤醒（确定性）
-      输入一个项目目录，检测框架/部署形态/已出现的 sink 形态，
-      按 FINGERPRINTS 表硬映射到必读 chunk。不参与打分，直接置顶。
+  Channel A  fingerprint wake-up (deterministic)
+      Give it a project directory; it detects framework / deployment shape /
+      sink shapes already present, then hard-maps them through the FINGERPRINTS
+      table to must-read chunks. No scoring, pinned to the top.
 
-  通道 B 关键词检索（概率性）
-      BM25 over chunk 正文，heading 命中加权。中文按 2-gram 切，
-      英文按词切，所以 "路径穿越" 和 "path traversal" 都能召回。
+  Channel B  keyword retrieval (probabilistic)
+      BM25 over chunk bodies, with heading matches weighted. Chinese text is
+      split into 2-grams, English into words, so a Chinese-language query still
+      tokenizes. Note the reference corpus itself is English: a query written in
+      Chinese only recalls on the tokens it shares with the corpus, so English
+      queries retrieve best.
 
-输出带 file:start-end，可直接喂给 Read 的 offset/limit，**只加载命中的那几段**。
+Output carries file:start-end so it feeds straight into Read's offset/limit --
+**load only the matched segments**.
 
-用法:
+Usage:
     python3 kb_retrieve.py --project /opt/corpus2/gogs_gogs
     python3 kb_retrieve.py --project . --hits E1-SHELL-C,X-PATHTRAV-JOIN
-    python3 kb_retrieve.py --q "路径穿越 写 hook 谁执行"
-    python3 kb_retrieve.py --list          # 看索引里有哪些 chunk
+    python3 kb_retrieve.py --q "path traversal write hook who executes"
+    python3 kb_retrieve.py --list          # see which chunks are in the index
 """
 
 from __future__ import print_function
@@ -39,10 +45,11 @@ TOKEN_EN = re.compile(r"[A-Za-z_][A-Za-z0-9_]{1,}")
 TOKEN_CJK = re.compile(u"[\u4e00-\u9fff]{1,}")
 
 
-# ---------------------------------------------------------------- 索引构建
+# ---------------------------------------------------------------- index build
 
 def tokenize(text):
-    """英文词 + 中文 2-gram。中文单字不成词，2-gram 足够覆盖 '路径穿越' 这类术语。"""
+    """English words + Chinese 2-grams. A single CJK char is not a word, so CJK
+    runs are emitted as overlapping bigrams -- enough for multi-char terms."""
     toks = [t.lower() for t in TOKEN_EN.findall(text)]
     for run in TOKEN_CJK.findall(text):
         if len(run) == 1:
@@ -54,7 +61,7 @@ def tokenize(text):
 
 
 def load_chunks(ref_dir):
-    """按 ## / ### 标题切 chunk，记录行号范围。"""
+    """Split into chunks on ## / ### headings, recording the line range."""
     chunks = []
     if not os.path.isdir(ref_dir):
         return chunks
@@ -88,7 +95,7 @@ def load_chunks(ref_dir):
     return chunks
 
 
-# ---------------------------------------------------------------- 通道 B: BM25
+# ---------------------------------------------------------------- channel B: BM25
 
 def bm25_search(chunks, query, top=6, k1=1.5, b=0.75):
     q = tokenize(query)
@@ -103,7 +110,7 @@ def bm25_search(chunks, query, top=6, k1=1.5, b=0.75):
                 df[t] += 1
     scored = []
     for c in chunks:
-        if c["len"] < 5:          # 纯标题节，正文为空，检索时无意义
+        if c["len"] < 5:          # heading-only section, empty body: useless for retrieval
             continue
         s = 0.0
         for t in q:
@@ -113,14 +120,14 @@ def bm25_search(chunks, query, top=6, k1=1.5, b=0.75):
             idf = math.log(1 + (n - df[t] + 0.5) / (df[t] + 0.5))
             s += idf * (f * (k1 + 1)) / (f + k1 * (1 - b + b * c["len"] / avg))
         if c["heading"] and any(t in tokenize(c["heading"]) for t in q):
-            s *= 2.0                      # heading 命中翻倍：标题是人工写的主题标签
+            s *= 2.0                      # heading hit doubles the score: headings are hand-written topic labels
         if s > 0:
             scored.append((s, c))
     scored.sort(key=lambda x: -x[0])
     return scored[:top]
 
 
-# ---------------------------------------------------------------- 通道 A: 指纹
+# ---------------------------------------------------------------- channel A: fingerprints
 
 def _read(path, limit=None):
     try:
@@ -131,7 +138,8 @@ def _read(path, limit=None):
 
 
 class Ctx(object):
-    """项目指纹上下文。只抽取判断路由/形态所需的少量事实，不建全量 AST。"""
+    """Project fingerprint context. Extracts only the few facts needed to route,
+    without building a full AST."""
 
     def __init__(self, root):
         self.root = root
@@ -139,7 +147,7 @@ class Ctx(object):
         self.go_version = ""
         self.files = []
         self.dirs = set()
-        self.syms = ""            # 抽样文件的符号文本
+        self.syms = ""            # symbol text of the sampled files
         self.dockerfile = ""
         self.fw = set()
         self.hits = set()
@@ -163,7 +171,8 @@ class Ctx(object):
                 elif fn.endswith(".go"):
                     self.files.append(os.path.join(dirpath, fn))
 
-        # 框架与形态符号：优先读路由文件与 main.go，读不到再抽样
+        # Framework and shape symbols: read routing files and main.go first,
+        # fall back to sampling when they are absent.
         priority = [f for f in self.files
                     if re.search(r"(^|[/\\])(main|routes|routers?|router|server)\.go$", f)]
         rest = [f for f in self.files if f not in priority]
@@ -195,26 +204,26 @@ class Ctx(object):
 
 
 FINGERPRINTS = [
-    # (说明, 匹配函数, 必读 chunk 的 heading 片段)
-    ("框架是 gin", lambda c: "gin" in c.fw,
-     ["1. 框架指纹", "2. 入口形态"]),
-    ("框架是 echo", lambda c: "echo" in c.fw,
-     ["1. 框架指纹"]),
-    ("框架是 chi", lambda c: "chi" in c.fw,
-     ["1. 框架指纹"]),
-    ("框架是 macaron（Gitea/Gogs 系）", lambda c: "macaron" in c.fw,
-     ["1. 框架指纹", "A4.", "A7."]),
-    ("裸 net/http，无统一认证层", lambda c: ("nethttp" in c.fw and not (c.fw & set(["gin", "echo", "chi", "macaron", "beego"]))),
-     ["1. 框架指纹", "优先看这些端点"]),
-    ("镜像无 shell，E1 类结论要打折", lambda c: "no_shell" in c.hits,
-     ["5. 已知闸门清单"]),
-    ("项目带 router 目录", lambda c: "has_router_dir" in c.fw,
-     ["1. 框架指纹"]),
+    # (label, matcher, heading fragments of the must-read chunks)
+    ("framework is gin", lambda c: "gin" in c.fw,
+     ["1. Framework Fingerprint", "2. Entry Shapes"]),
+    ("framework is echo", lambda c: "echo" in c.fw,
+     ["1. Framework Fingerprint"]),
+    ("framework is chi", lambda c: "chi" in c.fw,
+     ["1. Framework Fingerprint"]),
+    ("framework is macaron (Gitea/Gogs family)", lambda c: "macaron" in c.fw,
+     ["1. Framework Fingerprint", "A4.", "A7."]),
+    ("bare net/http, no unified auth layer", lambda c: ("nethttp" in c.fw and not (c.fw & set(["gin", "echo", "chi", "macaron", "beego"]))),
+     ["1. Framework Fingerprint", "Prioritized endpoints"]),
+    ("image has no shell, discount E1-class conclusions", lambda c: "no_shell" in c.hits,
+     ["5. Known Gate Inventory"]),
+    ("project ships a router directory", lambda c: "has_router_dir" in c.fw,
+     ["1. Framework Fingerprint"]),
 ]
 
 
 def fingerprint_chunks(chunks, ctx, hits):
-    """确定性通道：命中即置顶，不参与打分。"""
+    """Deterministic channel: a match is pinned to the top, no scoring."""
     wanted = []
     reasons = []
     for label, match, targets in FINGERPRINTS:
@@ -228,25 +237,25 @@ def fingerprint_chunks(chunks, ctx, hits):
             wanted.append((t, label))
             reasons.append(label)
 
-    # 扫描器命中 → 规则详情 + 对应案例
+    # scanner hit -> rule detail + matching case
     for h in hits:
         h = h.strip().upper()
         if not h:
             continue
         if h.startswith("E1"):
-            wanted += [("E1", "命中 %s" % h), ("E1", "命中 %s" % h)]
+            wanted += [("E1", "hit %s" % h), ("E1", "hit %s" % h)]
         elif h.startswith("E2"):
-            wanted += [("E2", "命中 %s" % h)]
+            wanted += [("E2", "hit %s" % h)]
         elif h.startswith("E3"):
-            wanted += [("E3", "命中 %s" % h)]
+            wanted += [("E3", "hit %s" % h)]
         elif h.startswith("E4"):
-            wanted += [("E4", "命中 %s" % h)]
+            wanted += [("E4", "hit %s" % h)]
         elif h.startswith("E5"):
-            wanted += [("E5", "命中 %s" % h)]
+            wanted += [("E5", "hit %s" % h)]
         elif h.startswith("E6"):
-            wanted += [("E6", "命中 %s" % h)]
+            wanted += [("E6", "hit %s" % h)]
         elif h.startswith("X-PATHTRAV"):
-            wanted += [("X-PATHTRAV", "命中 %s：先看写侧闸门" % h), ("A7.", "命中 %s" % h)]
+            wanted += [("X-PATHTRAV", "hit %s: check the write-side gate first" % h), ("A7.", "hit %s" % h)]
 
     out, seen = [], set()
     for needle, why in wanted:
@@ -259,14 +268,14 @@ def fingerprint_chunks(chunks, ctx, hits):
     return out
 
 
-# ---------------------------------------------------------------- 输出
+# ---------------------------------------------------------------- output
 
 def emit(rows, chunks_by_id, header):
     print("")
     print("== %s" % header)
     print("")
     if not rows:
-        print("  (无命中)")
+        print("  (no match)")
         return
     for i, item in enumerate(rows, 1):
         if isinstance(item[0], dict):
@@ -274,7 +283,7 @@ def emit(rows, chunks_by_id, header):
             score = None
         else:
             score, c = item
-            why = "关键词"
+            why = "keyword"
         loc = "%s:%d-%d" % (c["file"], c["start"], c["end"])
         tag = "  score=%.2f" % score if score is not None else ""
         print("  %2d. %-42s %s" % (i, c["heading"][:42], tag))
@@ -284,13 +293,13 @@ def emit(rows, chunks_by_id, header):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="go-sec-audit reference 检索层")
-    ap.add_argument("--project", help="项目根目录，走指纹通道")
-    ap.add_argument("--q", help="关键词查询，走 BM25 通道")
-    ap.add_argument("--hits", help="扫描器命中规则 id，逗号分隔，如 E1-SHELL-C,X-PATHTRAV-JOIN")
-    ap.add_argument("--ref", default=DEFAULT_REF, help="references 目录")
+    ap = argparse.ArgumentParser(description="go-sec-audit reference retrieval layer")
+    ap.add_argument("--project", help="project root; uses the fingerprint channel")
+    ap.add_argument("--q", help="keyword query; uses the BM25 channel")
+    ap.add_argument("--hits", help="scanner rule ids, comma separated, e.g. E1-SHELL-C,X-PATHTRAV-JOIN")
+    ap.add_argument("--ref", default=DEFAULT_REF, help="references directory")
     ap.add_argument("--top", type=int, default=6)
-    ap.add_argument("--list", action="store_true", help="列出全部 chunk")
+    ap.add_argument("--list", action="store_true", help="list every chunk")
     args = ap.parse_args()
 
     chunks = load_chunks(args.ref)
@@ -308,29 +317,29 @@ def main():
 
     if args.project:
         ctx = Ctx(args.project)
-        print("== 项目指纹 %s" % args.project)
+        print("== project fingerprint %s" % args.project)
         print("  go %s | deps=%d chars | go files=%d | dirs=%s"
               % (ctx.go_version or "?", len(ctx.deps), len(ctx.files),
                  ",".join(sorted(d for d in ctx.dirs if d and not d.startswith("."))[:8])))
-        print("  framework: %s" % (", ".join(sorted(ctx.fw)) or "未识别"))
+        print("  framework: %s" % (", ".join(sorted(ctx.fw)) or "not identified"))
         if "no_shell" in ctx.hits:
-            print("  WARN: 镜像无 shell / distroless，E1 类结论在运行时可能不成立")
+            print("  WARN: image has no shell / is distroless; E1-class conclusions may not hold at runtime")
         rows = fingerprint_chunks(chunks, ctx, hits)
-        emit(rows, None, "通道 A 指纹唤醒（确定性，必读）")
+        emit(rows, None, "Channel A fingerprint wake-up (deterministic, must read)")
         q = args.q or " ".join(
-            ["%s 闸门 证伪" % f for f in sorted(ctx.fw) if f != "has_router_dir"] or ["路线 闸门"])
+            ["%s gate falsify" % f for f in sorted(ctx.fw) if f != "has_router_dir"] or ["route gate"])
         if args.q:
             q = args.q
         bm_rows = bm25_search(chunks, q, top=args.top)
-        emit(bm_rows, None, "通道 B 关键词补足")
+        emit(bm_rows, None, "Channel B keyword top-up")
 
     elif args.q or hits:
         if hits:
             class _E(object):
                 fw, hits, dirs = set(), set(), set()
-            emit(fingerprint_chunks(chunks, _E(), hits), None, "通道 A 命中规则映射")
+            emit(fingerprint_chunks(chunks, _E(), hits), None, "Channel A rule-id mapping")
         if args.q:
-            emit(bm25_search(chunks, args.q, top=args.top), None, "通道 B BM25")
+            emit(bm25_search(chunks, args.q, top=args.top), None, "Channel B BM25")
     else:
         ap.print_help()
     return 0

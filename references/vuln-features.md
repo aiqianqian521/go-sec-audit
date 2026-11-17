@@ -1,123 +1,122 @@
-# 漏洞关键词特征库（全类型）
+# Vulnerability Keyword Feature Library (All Types)
 
-**定位**：本文件是"唤醒层"。关键词只回答"这里值得看一眼"，不回答"这里有漏洞"。
-判决归三层：**本文件判据 → 各维度方法论文件 → 证据门（L0-L3）**。
+**Position**: this file is the **wake-up layer**. Keywords answer only "worth a look here", never "there is a vulnerability here".
+The verdict belongs to three layers: **criteria in this file -> per-dimension methodology files -> evidence gates (L0-L3)**.
 
-两条纪律（缺一不可）：
+Two disciplines, both mandatory:
 
-1. **关键词不是判决**。扫描器规则只覆盖 E/X 相（RCE 类，27 条，见
-   [sink-catalog.md](sink-catalog.md)）；SQLi / SSRF / 越权 / 秘钥 / 内存类没有机械规则，
-   靠本文件的 rg 关键词通道 + 人工追。命中 ≠ 漏洞，未命中 ≠ 安全。
-2. **方法论文件优先于关键词**。每类的深读判据在对应方法论文件里（见每节"深读"），
-   关键词只是入口。本方法论的核心教训：从应用行为出发做独立发现，
-   不能把关键词表当完备清单。
+1. **A keyword is not a verdict**. Scanner rules cover only the E/X phases (RCE class, 27 rules, see
+   [sink-catalog.md](sink-catalog.md)); SQLi / SSRF / access control / secrets / memory have no mechanical
+   rules and rely on this file's rg keyword channel plus manual tracing. A hit is not a vulnerability,
+   and no hit is not safety.
+2. **Methodology files outrank keywords**. The deep criteria for each class live in the matching
+   methodology file (see "Deep read" in each section); keywords are only the entrance. The core lesson
+   of this methodology: discover independently from application behavior, and never treat a keyword
+   table as a complete checklist.
 
-用法：Phase 2 对目标树逐类跑 rg 命中，把命中记入候选表（C-###，来源标 `KW`），
-再按每类判据裁决。三类人工必查盲区（生成代码 / 构建标签 / vendor）见
-[sink-catalog.md](sink-catalog.md) 末节。
-判读说明：关键词命中**注释行与字符串字面量是常态**（grep 型通道固有，测试标记、
-文档注释都会被唤醒），判读时人工过滤；这不算通道缺陷，但**把注释命中写进报告**算。
-
----
-
-## E1 命令拼接（shell 参与解析）
-
-- **机械规则**：`E1-SHELL-C` / `E1-SHELL-EXPR` / `E1-SHELL-WIN` / `E1-STARTPROC` / `E1-CMD-INTERP`（扫描器覆盖）
-- **补充关键词**（扫描器盲区）：
-  ```bash
-  rg -n 'CommandContext\(' -t go                       # CommandContext 包装点
-  rg -n 'sh", "-c|/bin/sh|/bin/bash' -t go        # shell 路径变体
-  rg -n '"-c"\s*,\s*\w' -t go                      # -c 后接标识符
-  ```
-- **真阳性**：`exec.Command("sh","-c", "tar czf "+userDir)`；shell 名藏在变量里（`step.Image`）
-- **噪声**：全常量脚本；`shellescape.Quote` 包裹；位置参数传值
-- **证伪**：argv 分开传且无 shell（→ 是路径穿越不是注入）；shell 串无用户片段
-- **深读**：[six-paths.md](six-paths.md) §E1、[command-execution.md](command-execution.md)、[sink-catalog.md](sink-catalog.md)
-
-## E5 参数注入（argv 变成选项）
-
-- **机械规则**：`E5-GIT-OPT` / `E5-ARG-NONCONST`
-- **危险选项清单**（判据的核心）：git `--upload-pack` `--receive-pack` `-c core.sshCommand`；
-  tar `-I` `--to-command`；ssh `-o ProxyCommand`；pandoc `--filter` `--lua-filter`；
-  rsync `-e`；find `-exec`
-- **真阳性**：`exec.Command("git","clone", userURL)`，`userURL` 以 `-` 开头可控
-- **噪声**：用户数据拼在字面量前缀后（`"/reports/"+n`）——不会变成选项，不是 E5
-- **证伪**：目标程序没有"把参数值当命令跑"的选项 → 降级
-- **深读**：[six-paths.md](six-paths.md) §E5、[command-execution.md](command-execution.md) §4
-
-## E2 模板求值（SSTI）
-
-- **机械规则**：`E2-FUNCMAP-EXEC` / `E2-TPL-USERSTRING` / `E2-SPRIG` / `E2-TPL-CALL`
-- **补充关键词**：
-  ```bash
-  rg -n 'FuncMap\{|\.Funcs\(' -t go                 # 门在 FuncMap，不在 Parse
-  rg -n 'goja|otto|starlark|cel-go|expr\.' -t go    # 嵌入式解释器（等价 FuncMap 审计）
-  rg -n 'tpl\s*=|\.tpl|render.*template' -t go       # 模板文件从哪加载
-  ```
-- **真阳性**：`Parse(r.FormValue("tpl"))`；FuncMap 注册 `run/exec/readfile` 实现函数
-- **噪声**：`time.Parse`/`url.Parse`（历史教训，已有负样本）；`ParseFS(embedFS,...)`；纯函数 FuncMap
-- **证伪**：模板字面量 + FuncMap 全是 `upper/printf` 纯函数 → 删
-- **深读**：[six-paths.md](six-paths.md) §E2、[template-injection.md](template-injection.md)
-
-## E3 反序列化
-
-- **机械规则**：`E3-GOB-NET` / `E3-SESSION-DECODE` / `E3-YAML-IFACE`
-- **判据核心**：**解码本身不执行**。Go 无 gadget 链。问"解码结果被用作命令/路径/权限/加载目标了吗"
-- **真阳性**：session key 硬编码 → 伪造身份 → 接 E4；解码结果进 `exec`
-- **噪声**：解码本地文件；解码后只写日志/比较
-- **证伪**：解码后无下游敏感用途 → 最多 DoS（gob 长度前缀预分配）
-- **深读**：[six-paths.md](six-paths.md) §E3、[case-library.md](case-library.md) A1（三跳链正例）
-
-## E4 写入即执行（grep exec 找不到的主流形态）
-
-- **机械规则**：`E4-HOOK-WRITE` / `E4-EXECPATH-WRITE` / `E4-ZIPSLIP` / `E4-PLUGIN-DIR`
-- **落点×下游执行者清单**（四个条件缺一不可，见 six-paths）：
-  `.git/hooks`→git；`cron.d`/crontab→cron；`authorized_keys`→sshd；
-  `.bashrc`/`.profile`→登录 shell；systemd→systemd；插件目录→应用；
-  模板目录（热加载）→应用；`.github/workflows`→CI；`go.mod replace`→构建
-- **真阳性**：Zip Slip 落到 `/etc/cron.d`；写 `.git/hooks/post-merge` 且内容含用户数据
-- **噪声**：读 hooks 目录做展示；写入即删且无执行者
-- **证伪**：**没有下游执行者 + 触发时机 = 只是任意文件写**。这是最可证伪的一条
-- **深读**：[six-paths.md](six-paths.md) §E4、[file-transfers.md](file-transfers.md)（任意路径写 vs 任意内容写的区分）
-
-## E6 动态加载
-
-- **机械规则**：`E6-PLUGIN-OPEN` / `E6-SYSCALL-EXEC` / `E6-REFLECT-CALL` / `E6-CGO`
-- **补充关键词**：`INSTALL EXTENSION` / `LOAD\s+\w+fs`（数据库扩展，Grafana CVE-2024-9264 形态）
-- **证伪**：加载路径是常量 + 加载物不可写
-- **深读**：[six-paths.md](six-paths.md) §E6、[case-library.md](case-library.md) A4
-
-## X 路径穿越 / 任意文件读写（RCE 链的常见前半段）
-
-- **机械规则**：`X-PATHTRAV-JOIN` / `X-PATHTRAV-SLICE`
-- **修复识别**：`os.OpenRoot`（Go ≥1.24，结构性修复，见即降级）；
-  `Clean`+前缀校验（只有 Clean 不算）；"写临时文件+校验+Rename"三段式（路径与内容互斥，见判据 2）
-- **深读**：[sink-catalog.md](sink-catalog.md) X 节（判据 1-4 含 Gitea 1.4.0 实测）
+Usage: in Phase 2, run rg per class over the target tree, record hits in the candidate table (`C-###`, source tagged `KW`), then decide with each class's criteria. Three manually-checked blind spots (generated code / build tags / vendor) are covered at the end of [sink-catalog.md](sink-catalog.md).
+Reading note: keyword hits on **comment lines and string literals are normal** (inherent to any grep channel; test markers and doc comments all wake it up) — filter them by hand when reading. That is not a channel defect, but **writing a comment hit into the report** is.
 
 ---
 
-## SQL 注入（无机械规则，纯关键词通道）
+## E1 Command Concatenation (a shell participates in parsing)
 
-- **唤醒关键词**：
+- **Mechanical rules**: `E1-SHELL-C` / `E1-SHELL-EXPR` / `E1-SHELL-WIN` / `E1-STARTPROC` / `E1-CMD-INTERP` (covered by the scanner)
+- **Supplementary keywords** (scanner blind spots):
+  ```bash
+  rg -n 'CommandContext\(' -t go                       # CommandContext wrapper sites
+  rg -n 'sh", "-c|/bin/sh|/bin/bash' -t go        # shell path variants
+  rg -n '"-c"\s*,\s*\w' -t go                      # -c followed by an identifier
+  ```
+- **True positive**: `exec.Command("sh","-c", "tar czf "+userDir)`; the shell name hidden in a variable (`step.Image`)
+- **Noise**: fully constant scripts; wrapped in `shellescape.Quote`; value passed as a positional argument
+- **Falsification**: argv passed separately with no shell (-> path traversal, not injection); shell string contains no user fragment
+- **Deep read**: [six-paths.md](six-paths.md) §E1, [command-execution.md](command-execution.md), [sink-catalog.md](sink-catalog.md)
+
+## E5 Argument Injection (an argv token becomes an option)
+
+- **Mechanical rules**: `E5-GIT-OPT` / `E5-ARG-NONCONST`
+- **Dangerous option inventory** (the core of the criteria): git `--upload-pack` `--receive-pack` `-c core.sshCommand`;
+  tar `-I` `--to-command`; ssh `-o ProxyCommand`; pandoc `--filter` `--lua-filter`;
+  rsync `-e`; find `-exec`
+- **True positive**: `exec.Command("git","clone", userURL)` where `userURL` is controllable and starts with `-`
+- **Noise**: user data appended to a literal prefix (`"/reports/"+n`) — cannot become an option, not E5
+- **Falsification**: the target program has no option that runs an argument value as a command -> downgrade
+- **Deep read**: [six-paths.md](six-paths.md) §E5, [command-execution.md](command-execution.md) §4
+
+## E2 Template Evaluation (SSTI)
+
+- **Mechanical rules**: `E2-FUNCMAP-EXEC` / `E2-TPL-USERSTRING` / `E2-SPRIG` / `E2-TPL-CALL`
+- **Supplementary keywords**:
+  ```bash
+  rg -n 'FuncMap\{|\.Funcs\(' -t go                 # the door is the FuncMap, not Parse
+  rg -n 'goja|otto|starlark|cel-go|expr\.' -t go    # embedded interpreters (audit like a FuncMap)
+  rg -n 'tpl\s*=|\.tpl|render.*template' -t go       # where template files get loaded from
+  ```
+- **True positive**: `Parse(r.FormValue("tpl"))`; a FuncMap registering `run/exec/readfile` implementations
+- **Noise**: `time.Parse` / `url.Parse` (past lesson, negative samples exist); `ParseFS(embedFS,...)`; pure-function FuncMap
+- **Falsification**: template is a literal and the FuncMap holds only pure functions such as `upper/printf` -> drop
+- **Deep read**: [six-paths.md](six-paths.md) §E2, [template-injection.md](template-injection.md)
+
+## E3 Deserialization
+
+- **Mechanical rules**: `E3-GOB-NET` / `E3-SESSION-DECODE` / `E3-YAML-IFACE`
+- **Core criterion**: **decoding does not execute**. Go has no gadget chains. Ask: "is the decoded result used as a command, a path, a privilege, or a load target?"
+- **True positive**: a hard-coded session key -> forge an identity -> feeds E4; decoded result reaches `exec`
+- **Noise**: decoding a local file; after decoding, only logging or comparison
+- **Falsification**: no downstream sensitive use after decoding -> at most DoS (gob length-prefix preallocation)
+- **Deep read**: [six-paths.md](six-paths.md) §E3, [case-library.md](case-library.md) A1 (three-hop chain example)
+
+## E4 Write-Anywhere-Executed (the dominant shape grep exec cannot find)
+
+- **Mechanical rules**: `E4-HOOK-WRITE` / `E4-EXECPATH-WRITE` / `E4-ZIPSLIP` / `E4-PLUGIN-DIR`
+- **Landing spot x downstream executor inventory** (all four conditions required, see six-paths):
+  `.git/hooks`->git; `cron.d`/crontab->cron; `authorized_keys`->sshd;
+  `.bashrc`/`.profile`->login shell; systemd->systemd; plugin directory->application;
+  template directory (hot reload)->application; `.github/workflows`->CI; `go.mod replace`->build
+- **True positive**: Zip Slip landing in `/etc/cron.d`; writing `.git/hooks/post-merge` with user data in the content
+- **Noise**: reading the hooks directory for display; written then deleted with no executor
+- **Falsification**: **no downstream executor + no trigger moment = only arbitrary file write**. This is the most falsifiable item in the file
+- **Deep read**: [six-paths.md](six-paths.md) §E4, [file-transfers.md](file-transfers.md) (arbitrary-path write vs arbitrary-content write)
+
+## E6 Dynamic Loading
+
+- **Mechanical rules**: `E6-PLUGIN-OPEN` / `E6-SYSCALL-EXEC` / `E6-REFLECT-CALL` / `E6-CGO`
+- **Supplementary keywords**: `INSTALL EXTENSION` / `LOAD\s+\w+fs` (database extensions, the Grafana CVE-2024-9264 shape)
+- **Falsification**: the load path is a constant and the artifact is not writable
+- **Deep read**: [six-paths.md](six-paths.md) §E6, [case-library.md](case-library.md) A4
+
+## X Path Traversal / Arbitrary File Read-Write (the common first half of an RCE chain)
+
+- **Mechanical rules**: `X-PATHTRAV-JOIN` / `X-PATHTRAV-SLICE`
+- **Fix recognition**: `os.OpenRoot` (Go >=1.24, structural fix — downgrade on sight);
+  `Clean` plus a prefix check (Clean alone does not count); the "write temp file + verify + rename" pattern (path and content are mutually exclusive, see criterion 2)
+- **Deep read**: [sink-catalog.md](sink-catalog.md) X section (criteria 1-4 include the Gitea 1.4.0 field test)
+
+---
+
+## SQL Injection (no mechanical rules, keyword channel only)
+
+- **Wake-up keywords**:
   ```bash
   rg -n 'fmt\.Sprintf.*(SELECT|INSERT|UPDATE|DELETE|WHERE|ORDER)' -t go -i
-  rg -n '\.(Query|Exec|QueryRow)\([^)]*\+' -t go          # 拼接进执行调用
-  rg -n '\.(Raw|Where|Order|Group|Having|Select)\([^)]*(\+|Sprintf)' -t go   # GORM/ORM 拼接
-  rg -n 'Order\(\s*\w+\s*\)' -t go                        # 排序字段直传（占位符管不了标识符）
+  rg -n '\.(Query|Exec|QueryRow)\([^)]*\+' -t go          # concatenated into an execution call
+  rg -n '\.(Raw|Where|Order|Group|Having|Select)\([^)]*(\+|Sprintf)' -t go   # GORM/ORM concatenation
+  rg -n 'Order\(\s*\w+\s*\)' -t go                        # sort field passed straight through (placeholders cannot protect identifiers)
   rg -n 'gorm\.Expr|clause\.Expr|AllowGlobalUpdate' -t go
   ```
-- **真阳性**：`db.Raw("SELECT * FROM t WHERE name = " + name)`；
-  `Order(sortCol + " " + sortDir)`（标识符位置，绑定参数管不了）；延迟执行（存的查询片段后来被插值）
-- **噪声**：`Where("name = ?", x)`（值绑定）；ORM debug 输出渲染出的字符串（不是真正发的 SQL）；
-  拼接后调 `Prepare`（先把不可信文本拼进 SQL 再 Prepare 不恢复边界）
-- **判据核心**：值位置 vs **标识符/片段位置**分开追。占位符只保护自己的位置。
-  报告要写清插入点落在 SQL 语法的哪个位置（值/标识符/条件/排序/表名）
-- **证伪**：攻击者片段只进值位置且正确绑定；转换错误被处理（`strconv.Atoi` 错误未忽略）
-- **深读**：[sql-injection.md](sql-injection.md)、[sql-reference-notes.md](sql-reference-notes.md)
+- **True positive**: `db.Raw("SELECT * FROM t WHERE name = " + name)`;
+  `Order(sortCol + " " + sortDir)` (identifier position, bound parameters cannot help); deferred execution (a stored query fragment interpolated later)
+- **Noise**: `Where("name = ?", x)` (value binding); strings rendered by ORM debug output (not the SQL actually sent);
+  calling `Prepare` after concatenation (concatenating untrusted text before Prepare does not restore the boundary)
+- **Core criterion**: trace value positions and **identifier/fragment positions** separately. Placeholders protect only their own position.
+  The report must state which SQL syntactic position the insertion lands in (value/identifier/condition/order/table name)
+- **Falsification**: the attacker fragment enters only value positions and is bound correctly; conversion errors are handled (the `strconv.Atoi` error is not ignored)
+- **Deep read**: [sql-injection.md](sql-injection.md), [sql-reference-notes.md](sql-reference-notes.md)
 
-## SSRF（无机械规则，纯关键词通道）
+## SSRF (no mechanical rules, keyword channel only)
 
-- **唤醒关键词**：
+- **Wake-up keywords**:
   ```bash
   rg -n 'http\.(Get|Post|Head)\(' -t go
   rg -n 'NewRequest\(' -t go
@@ -126,95 +125,95 @@
   rg -n '[Ff]etch(Url|URL|Remote|External)|Import(Data|File|URL|[Uu]rl)|\.Preview\(' -t go
   rg -n 'CheckRedirect|DialContext|ProxyURL|ReverseProxy' -t go
   ```
-  > 教训（2026-11-16 压力测试）：裸 `import` 命中每个 Go 文件的 import 语句——100% 噪声
-  > 的词不进关键词表；特征词必须带形态（`Import(Data|File|URL)`）排歧。
-  > **改关键词必须跑 `assets/stress/stress_kwcheck.py` 回归**（对扫描器规则的同款纪律）。
-- **真阳性**：请求体/配置里的 URL 直达 `client.Do`，且校验是子串匹配（`strings.Contains(host,"internal")`）；
-  校验了原始 URL 但 `CheckRedirect` 后的目标没验；校验用的 resolver 和实际拨号的 resolver 不是同一个（check/use gap）
-- **噪声**：固定字面量 URL，用户只控 path/query（固定 origin 不算目标控制）；
-  `url.Parse` 只构造不派发（构造器≠dispatch，要找到真实 consumer）
-- **判据核心**：到达的是**派发后的最终目标**（重定向逐跳验、解析后 IP 验、IPv6/十进制编码过一遍），
-  且该目标类在应用策略里未被授权
-- **证伪**：入口是授权的固定目标白名单；scheme 不被 client 支持
-- **深读**：[ssrf.md](ssrf.md)、[io-template-reference-notes.md](io-template-reference-notes.md)
+  > Lesson (2026-11-16 stress test): a bare `import` matches the import statement of every Go file — a word with
+  > 100% noise does not belong in the keyword table; a feature word must carry a shape (`Import(Data|File|URL)`) to disambiguate.
+  > **Any keyword change must run the `assets/stress/stress_kwcheck.py` regression** (the same discipline as scanner rules).
+- **True positive**: a URL from the request body or config reaching `client.Do` directly, with validation that is substring matching (`strings.Contains(host,"internal")`);
+  validating the original URL but not the target after `CheckRedirect`; the resolver used for validation and the one used for dialing are different (check/use gap)
+- **Noise**: fixed literal URLs where the user controls only path/query (a fixed origin is not target control);
+  `url.Parse` that only constructs without dispatching (constructor != dispatch; find the real consumer)
+- **Core criterion**: what is reached is the **final target after dispatch** (verify redirects hop by hop, verify the resolved IP, run IPv6 and decimal encodings through it),
+  and that target class is not authorized by application policy
+- **Falsification**: the entry point is an authorized allowlist of fixed targets; the scheme is unsupported by the client
+- **Deep read**: [ssrf.md](ssrf.md), [io-template-reference-notes.md](io-template-reference-notes.md)
 
-## 认证 / 越权（无机械规则，最依赖人工链路追踪）
+## Authentication / Access Control (no mechanical rules, most dependent on manual chain tracing)
 
-- **唤醒关键词**：
+- **Wake-up keywords**:
   ```bash
-  rg -n '\.Use\(|middleware' -t go              # 中间件链组装点
-  rg -n 'session\.|GetCurrentUser|MustGet' -t go  # 身份提取点
+  rg -n '\.Use\(|middleware' -t go              # middleware chain assembly
+  rg -n 'session\.|GetCurrentUser|MustGet' -t go  # identity extraction point
   rg -n 'IsAdmin|isAdmin|role|tenant|owner' -t go -i
-  rg -n 'ctx\.Param\(|FormValue|PostForm' -t go   # 调用方可控 ID 进入数据操作
+  rg -n 'ctx\.Param\(|FormValue|PostForm' -t go   # caller-controlled ID enters a data operation
   rg -n 'http\.Error\([^)]*40[13]|StatusUnauthorized|AbortWithStatus|unauthor' -t go -i
-  # ↑ 装饰化形态：特征不在名字在控制流——401/403 写完响应后有没有 return/Abort
+  # ^ decorative shape: the signal is in control flow, not in the name — after writing a 401/403, is there a return/Abort?
   ```
-- **真阳性**（三类，判据完全不同）：
-  1. **功能越权**：普通已验证用户能调敏感操作（下游 service 层也没拦）
-  2. **数据越权（IDOR）**：`ctx.Param("id")` 直接进查询，缺"验证主体→资源归属"关系
-  3. **鉴权装饰化**：`requireAuth` 写了响应但**没 return/没 Abort**，函数继续执行
-     ——Gitea 1.4.0 `server.go:221` 与 Woodpecker `org.go:127`（`if user == nil` 在使用之后）都是这一类
-- **噪声**：handler 无检查但**下游 service/DB RLS 有**（报告"缺守卫"前必须读到那一层）；
-  公开端点；前端隐藏按钮
-- **判据核心**：按"入口→有效中间件→handler→service→数据操作"重建**实际执行顺序**，
-  中间件名字带 Auth 不等于拦住了（要验失败语义：写 403 后代码停不停）
-- **证伪**：验证过的主体到资源存在等价归属控制（不要求非得是 `owner_id` 比较）
-- **深读**：[authorization.md](authorization.md)、[capability-assessment.md](capability-assessment.md)（k8s/控制面）
+- **True positive** (three kinds, completely different criteria):
+  1. **Functional privilege escalation**: an ordinary authenticated user can invoke a sensitive operation (and the downstream service layer does not stop it either)
+  2. **Data-level privilege escalation (IDOR)**: `ctx.Param("id")` goes straight into a query, missing the "authenticated subject -> resource ownership" relationship
+  3. **Decorative auth check**: `requireAuth` writes the response but **never returns/aborts**, so the function keeps running
+     — Gitea 1.4.0 `server.go:221` and Woodpecker `org.go:127` (`if user == nil` placed after use) are both this class
+- **Noise**: no check in the handler but **the downstream service/DB RLS has one** (read that layer before reporting "missing guard");
+  public endpoints; a hidden button in the frontend
+- **Core criterion**: rebuild the **actual execution order** as "entry -> effective middleware -> handler -> service -> data operation".
+  A middleware named Auth is not proof it blocks (verify the failure semantics: after writing 403, does the code stop?)
+- **Falsification**: an equivalent ownership control exists between the authenticated subject and the resource (it does not have to be an `owner_id` comparison)
+- **Deep read**: [authorization.md](authorization.md), [capability-assessment.md](capability-assessment.md) (k8s/control plane)
 
-## 凭据 / 秘钥（高频低门槛类）
+## Credentials / Secrets (high frequency, low bar)
 
-- **唤醒关键词**：
+- **Wake-up keywords**:
   ```bash
-  rg -n 'NewCookieStore\(\[\]byte|NewHMAC\(\[\]byte|\[\]byte\(".*"\)' -t go   # 硬编码 key
+  rg -n 'NewCookieStore\(\[\]byte|NewHMAC\(\[\]byte|\[\]byte\(".*"\)' -t go   # hard-coded key
   rg -n 'SECRET|API_KEY|TOKEN\s*(:=|=)\s*"' -t go -i
-  rg -n 'expandenv|getenv' -t go        # 模板内环境变量展开（sprig）
-  rg -n 'net/http/pprof|debug/' -t go   # 侦察面（X-PPROF-EXPOSED 配套）
+  rg -n 'expandenv|getenv' -t go        # env expansion inside templates (sprig)
+  rg -n 'net/http/pprof|debug/' -t go   # reconnaissance surface (pairs with X-PPROF-EXPOSED)
   ```
-- **判据核心**：硬编码 key 要写清**伪造后能拿到什么权限、权限能干什么**（接 E3/E4），
-  不是"有个 key"就完事
-- **脱敏反例（必须追到消费点再定级）**：`Secret.Copy()` 之类不复制 `Value` 字段的模式，
-  意味着明文不出 HTTP。不追消费点直接报 High 是典型误报（Woodpecker `model/secret.go:112` 实测）
-- **深读**：[case-library.md](case-library.md) A1（key→伪造→提权链）
+- **Core criterion**: for a hard-coded key, state **what privilege forgery yields and what that privilege can do** (feeds E3/E4);
+  "there is a key" is not enough
+- **Redaction counterexample (you must trace to the consumption point before rating)**: patterns such as `Secret.Copy()` that do not copy the `Value` field
+  mean plaintext never leaves over HTTP. Reporting High without tracing the consumption point is a textbook false positive (measured in Woodpecker `model/secret.go:112`)
+- **Deep read**: [case-library.md](case-library.md) A1 (key -> forgery -> privilege escalation chain)
 
-## 不安全内存 / panic 面
+## Unsafe Memory / Panic Surface
 
-- **唤醒关键词**：`unsafe.Pointer` / `uintptr` / `import "C"` / `reflect.SliceHeader` / `syscall.Mmap`
-- **真阳性**：unsafe 转换 + 长度来自不可信输入；cgo 缓冲区契约不匹配
-- **噪声（高频）**：普通 nil 解引用 panic → `gin.Recovery()`/net/http recovery → 500。
-  这是 **DoS/可用性问题**，不是内存破坏，单独分类报告（Woodpecker F-001 实测：
-  `session.User(c)` 返回 nil → 立即 `ForgeFromUser(user)` 取字段 → panic）
-- **判据核心**：区分"越界原生访问 / 悬垂引用"（真内存破坏）与"可恢复 panic"（可用性）。
-  报告里不许把后者写成 RCE
-- **深读**：[unsafe-memory.md](unsafe-memory.md)
+- **Wake-up keywords**: `unsafe.Pointer` / `uintptr` / `import "C"` / `reflect.SliceHeader` / `syscall.Mmap`
+- **True positive**: an unsafe conversion with a length taken from untrusted input; a cgo buffer contract mismatch
+- **Noise (high frequency)**: an ordinary nil-dereference panic -> `gin.Recovery()`, net/http recovery -> 500.
+  That is a **DoS / availability** problem, not memory corruption; report it in its own class (measured in Woodpecker F-001:
+  `session.User(c)` returns nil -> `ForgeFromUser(user)` immediately reads a field -> panic)
+- **Core criterion**: separate "out-of-bounds native access / dangling reference" (real memory corruption) from "recoverable panic" (availability).
+  Never write the latter as RCE in a report
+- **Deep read**: [unsafe-memory.md](unsafe-memory.md)
 
-## 上传 / 下载 / 归档
+## Upload / Download / Archive
 
-- **机械规则**：`E4-ZIPSLIP`（解压侧）；其余关键词通道：
+- **Mechanical rules**: `E4-ZIPSLIP` (extraction side); the rest use the keyword channel:
   ```bash
   rg -n 'FormFile|multipart' -t go
   rg -n 'zip\.NewReader|tar\.NewReader|Unarchive|ExtractTo' -t go
-  rg -n 'Symlink|Lstat|O_NOFOLLOW' -t go          # 有防护痕迹，别急着报
+  rg -n 'Symlink|Lstat|O_NOFOLLOW' -t go          # traces of defense: do not rush to report
   ```
-- **判据核心**：**任意路径写 ≠ 任意内容写**（内容固定时只能覆盖/截断/DoS，不能种可执行物）。
-  上传的后续消费（执行/解析/模板加载）决定定级；扩展名/MIME 检查既非万能也非摆设
-- **深读**：[file-transfers.md](file-transfers.md)
+- **Core criterion**: **arbitrary-path write != arbitrary-content write** (with fixed content you can only overwrite/truncate/DoS, not plant an executable).
+  What consumes the upload afterwards (execution/parsing/template loading) decides the rating; extension and MIME checks are neither a silver bullet nor decoration
+- **Deep read**: [file-transfers.md](file-transfers.md)
 
-## XML / 外部实体
+## XML / External Entities
 
-- Go `encoding/xml` 默认不解析外部实体（无经典 XXE）。看到 XML 解码先确认是否用了
-  `xml.Decoder` 自定义实体解析或第三方库，默认按噪声处理，一句话说明即可。
+- Go `encoding/xml` does not resolve external entities by default (no classic XXE). On seeing XML decoding, first confirm whether
+  `xml.Decoder` custom entity resolution or a third-party library is in play; by default treat it as noise and say so in one line.
 
 ---
 
-## 链组合（真实漏洞几乎都是链）
+## Chain Composition (real vulnerabilities are almost always chains)
 
 ```
-E3 解码 → 伪造身份 → E4 写 hook → 执行          (Gogs/Gitea 2018)
-X 穿越读 → 拿到 app.ini/凭据 → 二次接管           (Gitea 1.4.0)
-E4 落盘 → E6 加载 → 执行                         (插件类)
-E5 参数注入 → 外部程序代执行                      (git/pandoc 类)
-越权(装饰化 requireAuth) → X 任意读 → 凭据泄漏     (组合前半段高频)
+E3 decode -> forge identity -> E4 write hook -> execute          (Gogs/Gitea 2018)
+X traversal read -> obtain app.ini/credentials -> second takeover (Gitea 1.4.0)
+E4 write -> E6 load -> execute                                    (plugin class)
+E5 argument injection -> external tool re-exec                    (git/pandoc class)
+access control (decorative requireAuth) -> X arbitrary read -> credential leak  (high frequency in first halves)
 ```
 
-写报告时一跳一跳列，每跳带 `path:line`。压缩跳数是最常见的失信行为。
-校准样本：[case-library.md](case-library.md)（含伪 CVE 识别表——引用任何 CVE 前必查）。
+When writing the report, list it hop by hop, each hop with `path:line`. Collapsing hops is the most common way to lose credibility.
+Calibration samples: [case-library.md](case-library.md) (includes the fabricated-CVE table — check it before citing any CVE).

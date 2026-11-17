@@ -1,6 +1,7 @@
 package selftest
 
-// 负样本：模板文本是字面量，FuncMap 只有安全函数。E2 类规则必须不命中。
+// Negative sample: the template text is a literal and the FuncMap holds only safe
+// functions. Every E2-class rule must stay silent.
 import "html/template"
 
 var page = template.Must(template.New("p").Funcs(template.FuncMap{

@@ -2,8 +2,9 @@ package sample
 
 import "os/exec"
 
-// `git -c key=value` 的 -c 是配置项，不是 shell 的脚本开关。
-// 判据在 "-c" 之后：字面量 = 配置值，非字面量 = 交给 shell 的脚本。
+// In `git -c key=value` the -c is a config flag, not the shell's script switch.
+// The criterion is what follows "-c": a literal is a config value, a non-literal
+// is a script handed to the shell.
 func status() ([]byte, error) {
 	return exec.Command("git", "-c", "core.hooksPath=/dev/null", "status").Output()
 }

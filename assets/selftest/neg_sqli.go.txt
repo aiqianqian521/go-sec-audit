@@ -1,6 +1,7 @@
 package selftest
 
-// 负样本：字符串拼接进 SQL，是 SQLi 不是 RCE。不得命中任何 E 类规则。
+// Negative sample: string concatenation into SQL is SQLi, not RCE. No E-class rule
+// may fire.
 import "fmt"
 
 func Query(id string) string {

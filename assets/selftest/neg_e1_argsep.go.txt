@@ -1,7 +1,9 @@
 package selftest
 
-// 负样本：参数分开传，无 shell 参与。E1 类规则必须全部不命中。
-// 注意：这不是"绝对安全"，只是 E1（shell 拼接）不成立；选项注入另判。
+// Negative sample: arguments passed separately, no shell involved. Every E1-class
+// rule must stay silent.
+// Note: this is not "absolutely safe" -- only E1 (shell concatenation) does not
+// hold here; argument injection is judged separately.
 import (
 	"net/http"
 	"os/exec"

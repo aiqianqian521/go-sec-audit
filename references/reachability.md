@@ -1,14 +1,14 @@
-# 可达性：Go 里怎么从入口追到 sink
+# Reachability: Tracing from Entry Point to Sink in Go
 
-扫描器只给出"某个函数里有 sink"。真工作是回答：**谁能调到这里，带什么数据**。
+The scanner only tells you "a sink exists in some function". The real work is answering: **who can reach this, carrying what data**.
 
-Go 有个好处：没有 Spring 那种隐式绑定，调用链通常 2–5 跳。也有坏处：下面这些写法会让朴素污点追踪直接失效。
+Go has one advantage: no implicit binding like Spring's, so call chains are usually 2-5 hops. It also has a downside: the constructs below break naive taint tracking outright.
 
 ---
 
-## 1. 先建入口面清单（别从 sink 开始）
+## 1. Build the Entry-Surface List First (do not start from the sink)
 
-从路由注册往下看，比从 sink 往上猜快 10 倍。
+Reading down from route registration is 10x faster than guessing up from the sink.
 
 ```bash
 rg -n 'HandleFunc|Handle\(|\.GET\(|\.POST\(|\.PUT\(|\.DELETE\(|\.Group\(' -t go
@@ -17,149 +17,149 @@ rg -n 'cobra\.Command\{|flag\.' -t go
 rg -n 'cron\.|time\.Ticker|fsnotify' -t go
 ```
 
-产出一张表：
+Produce a table:
 
-| 入口 | 方法+路径 | handler | 中间件链 | 认证状态 |
+| Entry | Method + path | handler | Middleware chain | Auth state |
 |------|-----------|---------|----------|----------|
-| `routers/api/v1/repo/patch.go:31` | POST `/repos/:id/diffpatch` | `ApplyDiffPatch` | `repoAssignment` → `ReqRepoWriter` | 任意登录用户 |
+| `routers/api/v1/repo/patch.go:31` | POST `/repos/:id/diffpatch` | `ApplyDiffPatch` | `repoAssignment` -> `ReqRepoWriter` | any logged-in user |
 
-**认证状态比 sink 更重要。** 未认证可达 + E4 = 严重；仅管理员可达 + E2 = 通常不是漏洞（管理员本就能改配置）。
+**Auth state matters more than the sink.** Unauthenticated reachable + E4 = severe; admin-only + E2 = usually not a vulnerability (admins can already change config).
 
-判断鉴权不要只读 handler 内部，要读**注册处**：
+To judge auth, do not read inside the handler — read the **registration site**:
 
 ```go
-auth := r.Group("/api", middleware.Auth())   // 这一层的 Use 决定下面全部
-auth.POST("/repos/:id/diffpatch", handler)    // 继承 auth
+auth := r.Group("/api", middleware.Auth())   // the Use on this level decides everything below
+auth.POST("/repos/:id/diffpatch", handler)    // inherits auth
 ```
 
-若 handler 挂在上层 `r` 上而非 `auth` 上，就是未认证。
+If the handler is attached to the parent `r` instead of `auth`, it is unauthenticated.
 
 ---
 
-## 2. 反向追：sink → 入口
+## 2. Backward Tracing: sink -> entry
 
-扫描器已经给了每个 sink 函数的 3 个调用点（报告 C 节）。手工继续：
+The scanner already lists 3 call sites for each sink function (report section C). Continue by hand:
 
 ```bash
-rg -n '\bWriteHook\(' -t go          # 谁调它
-rg -n 'func WriteHook' -t go         # 它的签名（参数类型决定能传什么）
+rg -n '\bWriteHook\(' -t go          # who calls it
+rg -n 'func WriteHook' -t go         # its signature (parameter types decide what can be passed)
 ```
 
-判读调用点实参，只分三类：
-- **常量**：`WriteHook("post-merge", tmpl)` → 这条路径死
-- **配置**：`WriteHook(cfg.HookName, ...)` → 追配置来源（文件？环境变量？API 可改？）
-- **请求数据**：`WriteHook(r.FormValue("x"), ...)` → 活的
+Classify each call site's arguments into exactly three kinds:
+- **Constant**: `WriteHook("post-merge", tmpl)` -> this path is dead
+- **Config**: `WriteHook(cfg.HookName, ...)` -> trace where the config comes from (file? environment variable? changeable via API?)
+- **Request data**: `WriteHook(r.FormValue("x"), ...)` -> live
 
 ---
 
-## 3. 七个会让追踪失效的 Go 写法
+## 3. Seven Go Constructs That Break Tracing
 
-### 3.1 interface 动态派发
+### 3.1 Dynamic interface dispatch
 ```go
 type Runner interface{ Run(ctx context.Context, spec Spec) error }
 ```
-`sink` 在某实现里，调用点只看到接口。必须找全实现：
+The `sink` lives in some implementation, while the call site only sees the interface. You must find every implementation:
 ```bash
 rg -n 'func \([a-z]+ \*?\w+\) Run\(' -t go
 ```
-漏掉实现 = 漏掉路径。报告里写明"接口有 N 个实现，逐一检查"。
+Miss an implementation = miss a path. State in the report "the interface has N implementations, each checked".
 
-### 3.2 中间件重排与短路
+### 3.2 Middleware reordering and short-circuiting
 ```go
 r.Use(Auth(), RateLimit())
 r.POST("/x", h)
 ```
-`Auth()` 里 `c.Abort()` 的路径不可达；`c.Next()` 之后的代码在 handler 返回后才跑。Echo/Fiber/gin 语义不同，别套用。
+The path inside `Auth()` that calls `c.Abort()` is unreachable; code after `c.Next()` runs only after the handler returns. Echo/Fiber/gin semantics differ — do not transplant one onto another.
 
-### 3.3 goroutine 闭包捕获
+### 3.3 Goroutine closure capture
 ```go
 for _, job := range jobs {
-    go func() { exec.Command("sh","-c", job.Cmd).Run() }()   // job 被捕获
+    go func() { exec.Command("sh","-c", job.Cmd).Run() }()   // job is captured
 }
 ```
-扫描器看到 sink 在匿名函数里，函数名是 `func1`，调用点找不到。这类**必须人工读**：`job.Cmd` 从哪来。
+The scanner sees the sink inside an anonymous function named `func1`, and finds no call site. This class **must be read by hand**: where does `job.Cmd` come from.
 
-### 3.4 回调注册表
+### 3.4 Callback registry
 ```go
 var handlers = map[string]func(string) error{"export": exportCmd}
 fn := handlers[r.URL.Query().Get("action")]
 fn(r.FormValue("arg"))
 ```
-键可控 → 目标函数可控。追表里每个 value 的实现，而不是追调用链。
+Controllable key -> controllable target function. Trace the implementation of every value in the table, not the call chain.
 
-### 3.5 反射与 struct tag
+### 3.5 Reflection and struct tags
 ```go
 reflect.ValueOf(obj).MethodByName(action).Call(args)
 ```
-方法名可控 = 任意方法调用。列出目标类型的**导出方法**，找其中有副作用的。
+Controllable method name = arbitrary method invocation. List the target type's **exported methods** and find the ones with side effects.
 
-### 3.6 生成代码
-`*.pb.go` / `*_gen.go` / `wire_gen.go` 里的 sink 不能直接改，修复在 `.proto` 或生成器模板。报告要写"生成物，源头在 X"，否则开发改完重新生成又回来了。
+### 3.6 Generated code
+A sink inside `*.pb.go` / `*_gen.go` / `wire_gen.go` cannot be fixed there; the fix lives in the `.proto` or the generator template. The report must say "generated artifact, source at X", otherwise the developers fix it, regenerate, and it comes back.
 
-### 3.7 构建标签
+### 3.7 Build tags
 ```go
 //go:build linux && cgo
 ```
-这个文件在 Windows 上不参与编译。你在 Windows 上看代码，看到的不是线上编译的东西。
+This file does not compile on Windows. Reading code on Windows, you are not looking at what ships.
 ```bash
 rg -n '^//go:build|^// \+build' -t go
 ```
-报告里必须声明"当前审计覆盖的平台/标签组合"，否则"未发现问题"这句话无意义。
+The report must declare "platform/tag combinations covered by this audit", otherwise the sentence "no issues found" is meaningless.
 
 ---
 
-## 4. 数据形态判定（sink 处的最后一米）
+## 4. Data Shape at the Sink (the last meter)
 
-到了 sink，只看这一行不够，往回找**最后一次变换**：
+Reaching the sink, one line is not enough; walk back to the **last transform**:
 
 ```go
-name := r.FormValue("f")            // 原始
-name = filepath.Base(name)          // 只剩文件名 → 路径穿越死
+name := r.FormValue("f")            // raw
+name = filepath.Base(name)          // filename only -> path traversal is dead
 name = strings.TrimSuffix(name,".txt")
-cmd := exec.Command("sh","-c","cat "+name)   // 仍然 E1，因为 Base 不防 shell 元字符
+cmd := exec.Command("sh","-c","cat "+name)   // still E1, because Base does not stop shell metacharacters
 ```
 
-判据表：
+Criteria table:
 
-| 变换 | 挡住什么 | 挡不住什么 |
+| Transform | Stops | Does not stop |
 |------|---------|-----------|
-| `filepath.Base` | 路径穿越 | shell 元字符、`-` 开头 |
-| `filepath.Clean` + 前缀校验 | 路径穿越 | shell 元字符 |
-| `strconv.Atoi` 成功 | 一切字符串注入 | 数值边界问题 |
-| 白名单枚举 `switch` | 一切 | 白名单本身有危险值 |
-| `shellescape.Quote` | E1 注入 | E5 参数注入、路径穿越 |
-| `html.EscapeString` | XSS | 一切 RCE 相 |
-| `url.QueryEscape` | URL 注入 | 一切 RCE 相 |
+| `filepath.Base` | path traversal | shell metacharacters, a leading `-` |
+| `filepath.Clean` + prefix check | path traversal | shell metacharacters |
+| successful `strconv.Atoi` | all string injection | numeric boundary issues |
+| allowlist `switch` | everything | dangerous values inside the allowlist itself |
+| `shellescape.Quote` | E1 injection | E5 argument injection, path traversal |
+| `html.EscapeString` | XSS | every RCE phase |
+| `url.QueryEscape` | URL injection | every RCE phase |
 
-**这张表是最容易出错的地方**：`html.EscapeString` 和 `url.QueryEscape` 在 RCE 语境里等于没做。
+**This table is where mistakes concentrate**: in an RCE context, `html.EscapeString` and `url.QueryEscape` amount to doing nothing.
 
 ---
 
-## 5. 写出可达性结论的格式
+## 5. Format for Writing a Reachability Conclusion
 
-不要写"用户输入流入 exec"。要写：
+Do not write "user input flows into exec". Write:
 
 ```
 entry   POST /api/repos/:id/hooks         routers/api/repo.go:44
-auth    auth.Group 下，任意登录用户        routers/api/repo.go:12
+auth    under auth.Group, any logged-in user   routers/api/repo.go:12
 hop1    c.PostForm("content") -> body      api/hooks.go:31
 hop2    hookBody -> writeHook(body)        api/hooks.go:37
 hop3    filepath.Join(repo,".git","hooks","post-receive")  hooks.go:41
 sink    os.WriteFile(target, body, 0755)   hooks.go:41
-valid   none（无 Clean、无前缀校验、无内容校验）
+valid   none (no Clean, no prefix check, no content check)
 ```
 
-有 hop 编号、有 `path:line`、有 validation 结论。缺任一项就是 L0/L1，不能升 L2。
+Numbered hops, `path:line` each, and a validation conclusion. Missing any of these keeps it at L0/L1 and blocks promotion to L2.
 
 ---
 
-## 6. 常见"看起来可达但不可达"
+## 6. Common "Looks Reachable But Is Not"
 
-- 函数没被任何地方调用（死代码）——`rg` 一下确认调用点数为 0
-- 只在 `_test.go` 里被调用
-- 只在 `//go:build ignore` 的工具文件里
-- 被 `if false` / 编译期常量关掉
-- 注册在未启用的路由组（feature flag 默认关）
-- handler 存在但路由没注册（写完忘了挂）
+- The function is called nowhere (dead code) — run `rg` and confirm the call-site count is 0
+- Called only from `_test.go`
+- Only inside a `//go:build ignore` tool file
+- Disabled by `if false` / a compile-time constant
+- Registered in a route group that is never enabled (feature flag off by default)
+- The handler exists but the route was never registered (written and never mounted)
 
-最后一条在 Go 项目里比想象中常见。**先确认路由真的注册了**，再谈可达。
+The last one is more common in Go projects than you would expect. **Confirm the route is actually registered** before discussing reachability.

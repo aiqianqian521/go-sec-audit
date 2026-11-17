@@ -1,42 +1,42 @@
-# 检索索引（rag-index）
+# Retrieval Index (rag-index)
 
-**不要全读 references/**。语料 24 文件（2026-11-16 压力测试收口实测合计 ~3068 行，
-另有 SKILL.md 215 行；行数随维护自然变动，引用时以复测时点为准，不要写死在别处）。
-全读挤爆上下文，全不读等于没有。
-用 `scripts/kb_retrieve.py` 两通道取数，一次审计控制在 3-4k token 参考量。
+**Do not read all of references/**. The corpus is 24 files (measured 2026-11-17: 3,058 lines total,
+plus SKILL.md at 217 lines; counts drift as the library is maintained — re-measure when citing, never hard-code them elsewhere).
+Reading everything blows the context; reading nothing is the same as not having it.
+Use `scripts/kb_retrieve.py`'s two channels and keep one audit within 3-4k tokens of reference material.
 
 ```bash
-python scripts/kb_retrieve.py --project <path>            # 指纹唤醒 + 按需检索
-python scripts/kb_retrieve.py --q "越权 401 return 装饰"     # 关键词直查
+python scripts/kb_retrieve.py --project <path>            # fingerprint wake-up + on-demand retrieval
+python scripts/kb_retrieve.py --q "auth 401 decorative return"   # direct keyword query
 python scripts/kb_retrieve.py --hits E1-SHELL-C,X-PATHTRAV-JOIN
-python scripts/kb_retrieve.py --list                       # 全部 chunk
+python scripts/kb_retrieve.py --list                       # all chunks
 ```
 
-## 通道
+## Channels
 
-- **A 指纹唤醒（确定性）**：项目目录 → 检测框架/部署形态/已命中 sink →
-  FINGERPRINTS 硬映射必读 chunk，置顶不打分
-- **B 关键词检索（BM25）**：heading 命中加权；中文 2-gram，英文按词，
-  "路径穿越"和"path traversal"都能召回
+- **A Fingerprint wake-up (deterministic)**: project directory -> detect framework/deployment shape/hit sinks ->
+  FINGERPRINTS maps hard to required chunks, pinned to the top and unscored
+- **B Keyword retrieval (BM25)**: heading hits are weighted; English is tokenized by word and CJK by 2-gram,
+  so both "path traversal" and the Chinese equivalent can be recalled
 
-输出 `file:start-end`，直接喂 Read 的 offset/limit。
+Output is `file:start-end`, fed straight into Read's offset/limit.
 
-## 语料分层与加载预算
+## Corpus Layers and Loading Budget
 
-| 层 | 文件 | 何时读 |
+| Layer | Files | When to read |
 |---|---|---|
-| 流程 | SKILL.md（本体） | 开场 |
-| 骨架 | execution-policy / application-surface / framework-signals / route-map / report-template | Phase 0 / 1 / 6，按阶段 |
-| 判决素材 | vuln-features / six-paths / sink-catalog / case-library / reachability / verification-gates | 命中对应类时 |
-| 分维度方法论 | authorization / capability-assessment / command-execution / sql-injection / ssrf / template-injection / file-transfers / unsafe-memory | **只在该维度进入判决时**，不预读 |
-| 历史线索（可选） | execution-reference-notes / sql-reference-notes / io-template-reference-notes | 独立发现之后 |
-| 评估场景 | acceptance-cases | 开发期行为检查 |
+| Process | SKILL.md (the main file) | at the start |
+| Skeleton | execution-policy / application-surface / framework-signals / route-map / report-template | Phase 0 / 1 / 6, per stage |
+| Verdict material | vuln-features / six-paths / sink-catalog / case-library / reachability / verification-gates | when the corresponding class hits |
+| Per-dimension methodology | authorization / capability-assessment / command-execution / sql-injection / ssrf / template-injection / file-transfers / unsafe-memory | **only when that dimension reaches a verdict**, never preloaded |
+| Historical leads (optional) | execution-reference-notes / sql-reference-notes / io-template-reference-notes | after independent discovery |
+| Evaluation scenarios | acceptance-cases | behavioral checks during development |
 
-## 典型指纹 → 首读
+## Typical Fingerprint -> First Reads
 
-- HTTP 服务（gin/echo/chi/…）→ application-surface + framework-signals + route-map
-- 出现 `exec.*` 命中 → six-paths §E1 + sink-catalog E1 节
-- SQL/ORM import → vuln-features SQLi 节 + sql-injection.md
-- webhook/出站请求 → vuln-features SSRF 节 + ssrf.md
-- k8s/client-go → capability-assessment + authorization
-- 需要写报告 → report-template（Phase 6 前）
+- HTTP service (gin/echo/chi/...) -> application-surface + framework-signals + route-map
+- `exec.*` hit -> six-paths §E1 + sink-catalog E1 section
+- SQL/ORM import -> vuln-features SQLi section + sql-injection.md
+- webhook/outbound request -> vuln-features SSRF section + ssrf.md
+- k8s/client-go -> capability-assessment + authorization
+- About to write a report -> report-template (before Phase 6)

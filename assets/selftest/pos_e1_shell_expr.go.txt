@@ -5,8 +5,9 @@ import (
 	"os/exec"
 )
 
-// shell 不在字面量里，而是在参数/变量里：E1-SHELL-C 要求字面量，这条在它之外。
-// woodpecker pipeline/backend/local/command.go:182 就是这个形态。
+// The shell is not a literal but lives in a parameter/variable: E1-SHELL-C demands
+// a literal, so this shape falls outside it.
+// woodpecker pipeline/backend/local/command.go:182 is exactly this shape.
 func runStep(shell, script string) error {
 	cmd := exec.Command(shell, "-e", "-c", script)
 	cmd.Stdout = os.Stdout
@@ -14,8 +15,9 @@ func runStep(shell, script string) error {
 	return cmd.Run()
 }
 
-// 被包装函数转发：字面量 shell 出现在非 exec.Command 的调用里。
-// woodpecker pipeline/backend/local/clone.go:103 就是这个形态。
+// Forwarded by a wrapper: the literal shell appears in a call that is not
+// exec.Command.
+// woodpecker pipeline/backend/local/clone.go:103 is exactly this shape.
 func runWrapped(ctx interface{}, pluginGit, rmCmd string) {
 	_ = newCmd(ctx, "/bin/sh", "-c", pluginGit+"; "+rmCmd)
 }

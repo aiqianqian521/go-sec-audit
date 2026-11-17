@@ -1,37 +1,39 @@
 # go-sec-audit
 
-**不是又一个 Go 漏洞扫描器——是把"候选"变成"能写进报告的判决"的那一段。**
+English | [简体中文](README.zh-CN.md)
+
+**Not another Go vulnerability scanner — it is the stretch that turns a "candidate" into a verdict you can put in a report.**
 
 A Go source-code security audit skill for LLM agents. Scanners produce candidates; this skill
 produces verdicts, and only after a named evidence gate. Every finding is graded L0→L3, every
 rejection is recorded with its reason, and the rules are guarded by falsifiable assertions
 (break a rule, the test must fail).
 
-- 27 条机械 sink 规则（E1-E6 + X，RCE 类）+ 29 条关键词通道（SQLi / SSRF / 越权 / 凭据 / 内存 / 归档）
-- 五档裁决：`FINDING` / `HOLD-evidence` / `HOLD-capability` / `KILL` / `未判`
-- L0（sink 命中）→ L1（入口可达）→ L2（数据形态存活）→ L3（隔离环境复现）四级证据门
-- 报告契约：8 节骨架 + 四态覆盖矩阵 + 计数加总校验 + 交付前 10 项检查
-- 纯标准库，Python 3.9+，零第三方依赖
+- 27 mechanical sink rules (E1-E6 + X, the RCE families) + 29 keyword-channel regexes (SQLi / SSRF / authorization / credentials / memory / archive)
+- Five verdicts: `FINDING` / `HOLD-evidence` / `HOLD-capability` / `KILL` / `undecided`
+- Four evidence gates: L0 (sink hit) → L1 (entry reachable) → L2 (data shape survives) → L3 (reproduced in an isolated environment)
+- Report contract: 8-section skeleton + four-state coverage matrix + count reconciliation + 10 pre-delivery checks
+- Pure standard library, Python 3.9+, zero third-party dependencies
 
 ---
 
-## 为什么要单独做一个
+## Why this exists separately
 
-现有工具都在"报点"这一层就打住了：
+Existing tools all stop at the "report a spot" layer:
 
-| 工具 | 产出 | 缺什么 |
+| Tool | Output | What is missing |
 |---|---|---|
-| gosec | AST 规则命中 + CWE 编号 | 不判可达性；一个未被任何路由引用的内部函数也会报 |
-| semgrep | 模式匹配命中 | 同上；规则越多噪声越大 |
-| gitleaks | 疑似凭据 | 只覆盖凭据一类 |
-| **go-sec-audit** | **候选 → 调用链 → 证据门 → 判决** | 需要 LLM agent 驱动，不是一条命令出报告 |
+| gosec | AST rule hits + CWE IDs | no reachability judgement; an internal function no route ever references still gets reported |
+| semgrep | pattern-match hits | same; the more rules, the more noise |
+| gitleaks | suspected credentials | covers the credential class only |
+| **go-sec-audit** | **candidate → call chain → evidence gate → verdict** | needs an LLM agent driving it; it is not a one-command report generator |
 
-前三个回答"这里像不像有问题"，这个回答"这个问题能不能写进报告、凭什么"。它同时强制记录
-**拒绝了什么、为什么拒绝**——因为安全审计里被误报坑掉的时间，通常比漏报更多。
+The first three answer "does this look wrong". This one answers "can this go into the report, and on what grounds". It also forces a record of
+**what was rejected and why** — because in security auditing the time lost to false positives usually exceeds the time lost to misses.
 
-## 安装
+## Install
 
-skill 是 `SKILL.md` + `references/` 的目录约定，主流 agent 宿主通用。
+A skill is the directory convention `SKILL.md` + `references/`, portable across the mainstream agent hosts.
 
 ```bash
 # WorkBuddy
@@ -41,122 +43,134 @@ git clone <this-repo> ~/.workbuddy/skills/go-sec-audit
 git clone <this-repo> ~/.claude/skills/go-sec-audit
 ```
 
-Windows 对应 `%USERPROFILE%\.workbuddy\skills\go-sec-audit`。克隆后目录里必须直接是
-`SKILL.md`（不要再套一层）。
+On Windows the path is `%USERPROFILE%\.workbuddy\skills\go-sec-audit`. After cloning, `SKILL.md`
+must sit directly in that directory (do not nest another level).
 
-## 快速开始
+## Quick start
 
 ```bash
-# 1. 机械规则扫一遍，拿到候选清单（只需 Python，不需要 LLM）
+# 1. Run the mechanical rules once to get the candidate list (Python only, no LLM needed)
 python scripts/scan_sinks.py /path/to/go/repo --out scans/report.md --json scans/report.json
 
-# 2. 自测：确认规则本身没坏（含变异测试）
+# 2. Self-test: confirm the rules themselves are not broken (includes mutation testing)
 python scripts/test_scan_sinks.py
 
-# 3. 关键词通道的回归（从 vuln-features.md 直接解析正则，防文档与代码漂移）
+# 3. Keyword-channel regression (parses regexes straight out of vuln-features.md, so docs and code cannot drift)
 python assets/stress/stress_kwcheck.py
 ```
 
-扫描器输出长这样（合成语料，示例）：
+Scanner output looks like this (synthetic corpus, example):
 
 ```
-- 已扫描 .go 文件: 3
-- 候选命中: 12（函数内出现输入源 4 / 仅命中 sink 8）
-- 分相统计: E1=4 / E2=2 / E4=1 / E5=2 / X=3
+- `.go` files scanned: 3
+- Candidate hits: 12 (input source present in the same func 4 / sink only 8)
+- Per-phase counts: E1=4 / E2=2 / E4=1 / E5=2 / X=3
 
-| # | 相 | 规则 | 位置 | 函数 | 输入源 | 判断依据 |
-|---|----|------|------|------|--------|----------|
-| 1 | E1 | E1-SHELL-C | pos_rce.go:40 | renderUserTpl | http form | shell 收到 -c 脚本串，分隔符由 shell 解析 |
+| # | Phase | Rule | Location | Function | Input source | Rationale |
+|---|-------|------|----------|----------|--------------|-----------|
+| 1 | E1 | E1-SHELL-C | pos_rce.go:40 | renderUserTpl | http form | shell receives a -c script string; separators are parsed by the shell |
 ```
 
-**扫描器只产出候选。** 后续的可达性追踪、数据形态判定、证据分级由 agent 按 `SKILL.md`
-的 Phase 0-6 执行——这是本项目的设计前提，不是缺陷。
+**The scanner produces candidates only.** Reachability tracing, data-shape judgement and evidence
+grading are carried out by the agent following Phase 0-6 of `SKILL.md` — that is the design premise
+of this project, not a defect.
 
-## 用它做一次审计
+## Running an audit with it
 
-在 agent 里说"对这个 Go 项目做安全审计"，或直接触发关键词（Go 代码审计 / RCE / 命令注入 /
-SQL 注入 / SSTI / SSRF / 越权 / CVE 复现校验）。工作流：
+Tell the agent "do a security audit of this Go project", or trigger a keyword directly (Go code
+audit / RCE / command injection / SQL injection / SSTI / SSRF / authorization / CVE reproduction
+check). The workflow:
 
-| Phase | 做什么 | 关键约束 |
+| Phase | What happens | Key constraint |
 |---|---|---|
-| 0 范围与授权 | 记录 commit SHA、Go 版本、入口面、**部署用户** | 没有部署用户就说不清影响 |
-| 1 面貌测绘 | APP/L/EP/CMD 编号 + 信任边界表 | 默认端口不等于在监听 |
-| 2 候选生成 | 扫描器 + 关键词 + 固定 rg 三连 | 规则只是线索，不是清单 |
-| 3 可达性 | **反向**从 sink 追调用方，到 handler 边界停 | Go 通常 2-5 跳，8 跳大概率误报 |
-| 4 裁决 | 写 payload 在每个变换点存活的理由 | 任一被过滤即证伪，直说 |
-| 5 证据门 | L0→L3，逐级要证据 | 无证据就 `HOLD-evidence`，不是"疑似高危" |
-| 6 报告 | 8 节契约 + 覆盖矩阵 + 计数加总 | 交付前 10 项检查 |
+| 0 Scope and authorization | record commit SHA, Go version, entry surface, **deployment user** | without the deployment user you cannot state impact |
+| 1 Surface mapping | APP/L/EP/CMD numbering + trust-boundary table | a default port is not a listener |
+| 2 Candidate generation | scanner + keywords + fixed rg triple | rules are leads, not a checklist |
+| 3 Reachability | trace callers **backwards** from the sink, stop at the handler boundary | Go is usually 2-5 hops; 8 hops is most likely a false positive |
+| 4 Verdict | write out why the payload survives each transform | any single filter falsifies it — say so |
+| 5 Evidence gate | L0→L3, evidence demanded level by level | no evidence means `HOLD-evidence`, not "probably critical" |
+| 6 Report | 8-section contract + coverage matrix + count reconciliation | 10 pre-delivery checks |
 
-执行默认**只读**：不 build / 不 run / 不发请求 / 不改文件。动态验证必须声明授权来源。
-详见 [references/execution-policy.md](references/execution-policy.md)。
+Execution is **read-only** by default: no build / no run / no requests / no file edits. Dynamic
+validation must state its authorization source.
+See [references/execution-policy.md](references/execution-policy.md).
 
-## 目录
+## Layout
 
 ```
-SKILL.md                       主文件：不可协商项 / 13 维度 × 工具对照 / Phase 0-6 / 输出契约
-references/
-  six-paths.md                 六相 RCE 模型（E1-E6 + X）+ 伪 CVE 识别
-  sink-catalog.md              27 条规则的匹配/真阳性/噪声/判据
-  vuln-features.md             13 类漏洞的关键词特征库（唤醒 / 噪声 / 证伪 / 深读指针）
-  verification-gates.md        L0-L3 证据门
-  report-template.md           报告契约：8 节骨架 + 五档裁决 + 10 项检查
-  case-library.md              历史 RCE 案例（分 L3-repro / L3-lit / 伪样本 / 待核验）
-  application-surface.md       面貌测绘
-  authorization.md             认证与越权
+SKILL.md                        main file: non-negotiables / 13 dimensions × tooling / Phase 0-6 / output contract
+references/                     24 documents
+  six-paths.md                  six-phase RCE model (E1-E6 + X) + fake-CVE identification
+  sink-catalog.md               the 27 rules: match / true positive / noise / criterion
+  vuln-features.md              keyword feature library for 14 vulnerability classes (wake-up / noise / falsification / deep-read pointer)
+  verification-gates.md         L0-L3 evidence gates
+  report-template.md            report contract: 8-section skeleton + five verdicts + 10 checks
+  case-library.md               historical RCE cases (split into L3-repro / L3-lit / fake samples / unverified)
+  application-surface.md        surface mapping
+  authorization.md              authentication and authorization
   sql-injection.md  ssrf.md  template-injection.md  command-execution.md
   unsafe-memory.md  file-transfers.md  capability-assessment.md  framework-signals.md
   reachability.md  route-map.md  rag-index.md  execution-policy.md  acceptance-cases.md
+  execution-reference-notes.md  sql-reference-notes.md  io-template-reference-notes.md
 scripts/
-  scan_sinks.py                候选扫描器（27 规则，stdlib）
-  test_scan_sinks.py           24 条断言，含变异测试
-  kb_retrieve.py               references 的两通道检索（BM25 + 指纹）
+  scan_sinks.py                 candidate scanner (27 rules, stdlib)
+  test_scan_sinks.py            24 assertions, includes mutation testing
+  kb_retrieve.py                two-channel reference retrieval (BM25 + fingerprints)
 assets/
-  selftest/                    16 个规则样本（7 正 / 9 负）
-  stress/                      植入语料：13 个正点 + 7 个反例 + 关键词回归器
-prompts/architect-intake.md    agent 角色与 worked examples
+  selftest/                     16 rule samples (7 positive / 9 negative)
+  stress/                       planted corpus: 13 positive points + 7 counter-examples + keyword regressor
+prompts/architect-intake.md     agent role and worked examples
 ```
 
-## 实测数据（可复现）
+## Measurements (reproducible)
 
-| 项目 | 结果 | 复现命令 |
+| Item | Result | Repro command |
 |---|---|---|
-| 规则断言 | **24/24 通过，0 失败**（7 正 + 9 负 + 7 变异 + 1 空文件） | `python scripts/test_scan_sinks.py` |
-| 植入点捕获 | **13/13**（扫描器 8 + 关键词通道 5，互补） | `python scripts/scan_sinks.py assets/stress` |
-| 负样本误报 | **0**（7 个反例：argv 分传、常量脚本、embed 模板、time.Parse、os.OpenRoot、值绑定、env 取 key） | 同上，`neg_safe.go` 零命中 |
-| 关键词通道 | 29 条正则，5/5 类命中植入正样本 | `python assets/stress/stress_kwcheck.py` |
+| Rule assertions | **24/24 pass, 0 fail** (7 positive + 9 negative + 7 mutation + 1 empty file) | `python scripts/test_scan_sinks.py` |
+| Planted-point capture | **13/13** (8 by the scanner + 5 by the keyword channel, complementary) | `python scripts/scan_sinks.py assets/stress` |
+| Negative-sample false positives | **0** (7 counter-examples: separated argv, constant script, embedded template, time.Parse, os.OpenRoot, value binding, env-sourced key) | same as above; `neg_safe.go` yields zero hits |
+| Keyword channel | 29 regexes, 5/5 classes hit their planted positive samples | `python assets/stress/stress_kwcheck.py` |
 
-变异测试的意思是：把规则的锚点抠掉，对应样本必须**不再**命中。否则说明断言是永真的、
-测不出东西——这类伪测试在安全规则库里很常见。
+Mutation testing means: remove a rule's anchor and the corresponding sample must **stop** matching.
+Otherwise the assertion was vacuously true and measures nothing — a very common form of pseudo-test
+in security rule libraries.
 
-## 局限（请先读这段再用）
+## Limitations (read this before use)
 
-1. **机械规则只覆盖 RCE 类（E/X 相）。** SQLi / SSRF / 越权 / 凭据 / 内存 / 归档靠关键词通道
-   唤醒 + 人工链路追踪，没有规则兜底。关键词未命中**不等于**安全。
-2. **召回率只在合成语料上验证过**（13/13）。真实项目的召回率未知，不要用"跑完没报"当结论。
-3. **真实项目只抽样过 1 个**（Woodpecker CI：57 条候选 → 0 条确证）。这个样本证明的是
-   "干净项目不会被刷成一屏高危"，不构成召回率证据。
-4. **需要 agent 驱动。** 脚本只给候选清单；判决由 LLM 按 SKILL.md 的流程做。想要一条命令
-   出 SARIF 的，请用 gosec/semgrep。
-5. **关键词通道依赖 ripgrep**（`rg`）。不在 PATH 时需自备；回归器用 Python `re`，不受影响。
-6. **报告会回显输入的绝对路径**，贴到公开 issue 前自行处理。
-7. **不替代人工。** 它压缩的是"从候选到判决"的时间，不是判断力。
+1. **Mechanical rules cover the RCE families only (E/X phases).** SQLi / SSRF / authorization /
+   credentials / memory / archive rely on keyword-channel wake-up plus manual chain tracing, with no
+   rule as a backstop. No keyword hit does **not** mean safe.
+2. **Recall is validated on synthetic corpora only** (13/13). Recall on real projects is unknown;
+   do not treat "ran it and it reported nothing" as a conclusion.
+3. **Only one real project has been sampled** (Woodpecker CI: 57 candidates → 0 confirmed). That
+   sample demonstrates "a clean project does not get flooded with criticals"; it is not evidence of recall.
+4. **It needs an agent to drive it.** The scripts only produce a candidate list; the verdict is made
+   by the LLM following SKILL.md. If you want one command that emits SARIF, use gosec/semgrep.
+5. **The keyword channel depends on ripgrep** (`rg`). Provide it yourself when it is not on PATH; the
+   regressor uses Python `re` and is unaffected.
+6. **Reports echo the absolute paths of the input**; sanitize them before pasting into a public issue.
+7. **It does not replace a human.** What it compresses is the time from candidate to verdict, not judgement.
 
-## 贡献
+## Contributing
 
-最有价值的贡献是**反例**：一个被误报的形态、一条永真的断言、一个规则覆盖不到的真漏洞。
-提 PR 前请确认 `test_scan_sinks.py` 与 `stress_kwcheck.py` 都通过——改规则不改测试的 PR
-不会被合并，这是本项目唯一硬性要求。
+The most valuable contribution is a **counter-example**: a shape that gets falsely reported, an
+assertion that is vacuously true, a real vulnerability the rules cannot reach.
+Before opening a PR, make sure both `test_scan_sinks.py` and `stress_kwcheck.py` pass — a PR that
+changes a rule without changing its test will not be merged. That is this project's only hard requirement.
 
 ## License
 
-MIT，见 [LICENSE](LICENSE)。
+MIT, see [LICENSE](LICENSE).
 
-> **权属说明**：本项目的部分方法论文件源自内部审计实践，公开发布前需由作者确认授权范围。
-> 若你是权利人或知悉权属争议，请先联系维护者；在权属确认前，请勿用于商业分发。
+> **Provenance note**: some methodology documents in this project derive from internal audit practice;
+> the author must confirm the scope of authorization before public release.
+> If you are a rights holder or are aware of a provenance dispute, contact the maintainer first; do not
+> use this commercially until provenance is confirmed.
 
-## 免责
+## Disclaimer
 
-仅用于**已获授权**的代码审计与安全研究。对第三方系统执行任何验证动作前，必须先取得书面授权。
+For **authorized** code auditing and security research only. Obtain written authorization before
+performing any validation action against a third-party system.
 
 ## Related Projects
 

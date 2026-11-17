@@ -5,8 +5,9 @@ import (
 	"os/exec"
 )
 
-// FuncMap 定义与 .Funcs() 调用分离：E2-FUNCMAP-EXEC 锚不到这种形态，
-// 必须由 E2-FUNCMAP-DEF 直接锚 FuncMap{ 字面量。
+// The FuncMap definition is separated from the later .Funcs registration:
+// E2-FUNCMAP-EXEC cannot anchor this shape, so E2-FUNCMAP-DEF has to anchor the
+// FuncMap literal directly.
 var fmap = template.FuncMap{
 	"run": func(c string) string {
 		out, _ := exec.Command("sh", "-c", c).CombinedOutput()

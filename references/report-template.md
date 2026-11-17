@@ -1,185 +1,185 @@
-# 报告契约（融合版）
+# Report Contract (Fused)
 
-输出不是"写一份好看的东西"，是让下一个人能核对。固定结构的作用只有一个：
-**让"查过/没查过"可被外部检验**。
+The output is not "write something that looks good" — it is something the next person can verify. The fixed structure serves exactly one purpose:
+**making "checked / never checked" externally testable**.
 
-两套契约在此合并：8 节骨架（章节结构 + 四态覆盖矩阵）+
-裁决计数与证据门（五档裁决 / L0-L3）。两套 ID 体系在本文件里合并，对应关系固定。
+Two contracts are merged here: the 8-section skeleton (section structure + four-state coverage matrix) plus
+verdict counts and evidence gates (five-state verdict / L0-L3). The two ID systems are unified in this file, with a fixed mapping.
 
-## 0. 四条铁律（任何规模都不许破）
+## 0. Four Iron Rules (no scale exempts you)
 
-1. **计数必须加总**。候选总数 = `F`（确认）+ `HOLD-evidence`（C）+ `HOLD-capability`（R）
-   + `KILL` + `未判`。加不上就是漏账，差额必须显式写出。
-2. **每个 `path:line` 写进报告前单独回读一次**；区间引用核首末两行。
-   凭 grep 印象写行号是本 skill 血泪教训（曾连犯 7 次）。
-3. **`L3-repro` 与 `L3-lit` 不许混写**。"上游已证实"和"我打通了"差一个量级。
-   `L3-repro` 计数只能来自 `EV-###` 记录，且每条带负样本对照。
-4. **任何动态动作声明授权来源**。谁批的、在哪台主机、有无回滚。缺一项 → 只进 `GAP-###`。
+1. **Counts must reconcile**. Total candidates = `F` (confirmed) + `HOLD-evidence` (C) + `HOLD-capability` (R)
+   + `KILL` + `undecided`. If it does not add up, the books are wrong, and the gap must be stated explicitly.
+2. **Read every `path:line` back once before it enters the report**; for a range, verify the first and last line.
+   Writing line numbers from grep impressions is this skill's hard-won lesson (done wrong 7 times in a row).
+3. **`L3-repro` and `L3-lit` must never be blurred**. "Upstream confirmed" and "I got it working" differ by an order of magnitude.
+   The `L3-repro` count may only come from `EV-###` records, and each carries a negative control.
+4. **Every dynamic action declares its authorization source**. Who approved it, on which host, and the rollback path. Missing one item -> it goes to `GAP-###` only.
 
-交付四件套（用户模板规范 L0）：**结论 / 证据 / 风险分级 / 下一步**。
-完整版 8 节天然覆盖四件套：§3+§4 是结论，各表 `path:line` 是证据，
-证据等级 L0-L3 是分级，§8 是下一步。
+Four-piece delivery (user template standard L0): **conclusion / evidence / risk rating / next step**.
+The full 8-section form covers the four by construction: §3+§4 are the conclusion, each table's `path:line` is the evidence,
+evidence tiers L0-L3 are the rating, §8 is the next step.
 
-## 1. 两种规模
+## 1. Two Scales
 
-| 情况 | 用哪套 |
+| Situation | Which form |
 |---|---|
-| 单点问题（"这个函数能不能注入"）、< 200 个 Go 文件、≤ 30 分钟 | **简版** |
-| 完整项目审计、多维度请求、要交给别人复核 | **完整版 8 节**，不得省略 |
+| Single question ("can this function be injected"), < 200 Go files, <= 30 minutes | **short form** |
+| Full project audit, multi-dimension request, or something another person must review | **full 8-section form**, no omissions |
 
-不要对 5 分钟的问题套 8 节模板——那会让"覆盖度"变成凑数。
+Do not wrap a 5-minute question in the 8-section template — that turns "coverage" into padding.
 
-### 简版
+### Short form
 
 ```markdown
-**结论**：<一句话，带证据等级>
-**目标**：<repo> @ <commit 或 "tarball, commit unknown">，扫描 <N> 个 .go 文件
-**候选**：<C-###> `<rule_id 或 KW-类>` `path:line` — <裁决 + 一句闸门>
-**下一步**：<最高优先级的一件事>
-**覆盖边界**：<跳过的树、未判的 Tier、未查的闸门>
+**Conclusion**: <one sentence, with evidence tier>
+**Target**: <repo> @ <commit or "tarball, commit unknown">, scanned <N> .go files
+**Candidate**: <C-###> `<rule_id or KW-class>` `path:line` — <verdict + one-line gate>
+**Next step**: <the single highest-priority action>
+**Coverage boundary**: <trees skipped, tiers undecided, gates unchecked>
 ```
 
-## 2. 完整版（8 节）
+## 2. Full Form (8 sections)
 
-标题用论文式编号；空节保留并写一句范围说明，不填凑数表格。
-只做面貌测绘的请求：只用 §1、§5、§7，不得暗示做过安全审查。
+Use paper-style numbering in headings; keep empty sections and write one line of scope, do not pad them with tables.
+For a surface-mapping-only request: use only §1, §5, §7, and never imply a security review happened.
 
 ```markdown
-# <project> — Go 安全审计报告
+# <project> — Go Security Audit Report
 
-- 目标 / 源码根：{repo 与审计路径}
-- 版本 / revision：{commit 或 "tarball, commit unknown"；Go 版本}
-- 审计日期：{YYYY-MM-DD HH:MM 时区}
-- 请求范围：{目录、维度（E1-E6/X/SQLi/SSRF/越权/秘钥/内存/文件）、明确排除项}
-- 分析模式：{static | static + 授权动态验证（授权来源：…）}
-- 覆盖度：{full | partial}（不是"安全"的声明）
-- 结果计数：F {n} / C(HOLD-evidence) {n} / R(HOLD-capability) {n} / KILL {n} / 未判 {n}
-- 证据等级：L3-repro {n} / L3-lit {n} / L2 {n} / L1 {n} / L0 {n}
-- 扫描基线：{27 条规则，命中 {n}，{LOC}k 行，命中率 {x}/千行；关键词通道 {n} 命中}
+- Target / source root: {repo and audit path}
+- Version / revision: {commit or "tarball, commit unknown"; Go version}
+- Audit date: {YYYY-MM-DD HH:MM timezone}
+- Requested scope: {directories, dimensions (E1-E6/X/SQLi/SSRF/authz/secrets/memory/files), explicit exclusions}
+- Analysis mode: {static | static + authorized dynamic verification (authorization source: ...)}
+- Coverage: {full | partial} (a statement about coverage, not about safety)
+- Result counts: F {n} / C(HOLD-evidence) {n} / R(HOLD-capability) {n} / KILL {n} / undecided {n}
+- Evidence tiers: L3-repro {n} / L3-lit {n} / L2 {n} / L1 {n} / L0 {n}
+- Scan baseline: {27 rules, {n} hits, {LOC}k lines, {x} hits per thousand lines; keyword channel {n} hits}
 
-## 1. 项目概览与架构
+## 1. Project Overview and Architecture
 
-### 1.1 应用与组件
-{这是什么程序；哪些可执行体；启动路径；监听与协议；数据存储；部署证据}
+### 1.1 Application and components
+{what this program is; which executables exist; startup path; listeners and protocols; data stores; deployment evidence}
 
-| App (APP-###) | 角色 | 入口 | 监听 / 目标 | 协议 / 身份 | 证据 |
+| App (APP-###) | Role | Entry | Listener / target | Protocol / identity | Evidence |
 |---|---|---|---|---|---|
 
-{监听值必须写来源：字面量 / 默认 / 配置 / 环境变量 / 未解析。不得把默认端口写成在监听}
+{listener values must cite a source: literal / default / config / environment variable / unresolved. Never write a default port as if it were listening}
 
-### 1.2 信任边界与威胁模型
-{主体与攻击者位置；资产与安全目标；公开/内部/管理入口；身份转换点；
-与请求维度相关的滥用路径（带前提）；未验证的部署假设}
+### 1.2 Trust boundaries and threat model
+{subject and attacker position; assets and security goals; public/internal/admin entry points; identity transition points;
+abuse paths relevant to the requested dimensions (with preconditions); unverified deployment assumptions}
 
-| 主体 | 达到执行原语/敏感操作需要的权限 | 边界证据 | 谁在守 |
+| Subject | Privilege needed to reach an execution primitive / sensitive operation | Boundary evidence | Who defends it |
 |---|---|---|---|
 
-## 2. 确认发现（F-###）
+## 2. Confirmed Findings (F-###)
 
-| ID | 严重度 | 类型/标题 | 入口 (EP/CMD-###) | 关键位置 | 证据等级 | 运行时验证 |
+| ID | Severity | Type/title | Entry (EP/CMD-###) | Key location | Evidence tier | Runtime verification |
 |---|---|---|---|---|---|---|
 
-### 2.x F-###：<具体缺陷与效果>
+### 2.x F-###: <specific defect and effect>
 
-- 严重度：{Critical/High/Medium/Low + 影响与前提}（不许发明 CVSS，除非用户要求且可支撑）
-- 置信度：{high/medium/low}（与严重度独立）
-- 证据状态：source-confirmed（代码在陈述前提下确立缺陷；不等于线上已利用）
-- 受影响面：{APP/EP/CMD-###，方法/路径或 CLI 入口}
+- Severity: {Critical/High/Medium/Low + impact and preconditions} (never invent a CVSS unless the user asks and it can be supported)
+- Confidence: {high/medium/low} (independent of severity)
+- Evidence state: source-confirmed (the code establishes the defect under the stated preconditions; this is not proof of exploitation in production)
+- Affected surface: {APP/EP/CMD-###, method/path or CLI entry}
 
-**前提与可控输入**：{调用方权限、输入字段、部署/凭据前提}
+**Preconditions and controllable input**: {caller privilege, input fields, deployment/credential preconditions}
 
-**证据与数据流**：
-{编号步骤，每步实际 `path:line` 与符号；必要的源码摘录（短，保留防护）}
+**Evidence and data flow**:
+{numbered steps, each with the real `path:line` and symbol; short source excerpts where needed (keep the guards)}
 
-**既有防护及其失效**：{查过的闸门；被违反的具体边界或不变量}
+**Existing protection and how it fails**: {gates checked; the specific boundary or invariant that is violated}
 
-**影响与边界**：{支撑的效果；条件性后续影响单独标注}
+**Impact and boundary**: {the effect that is supported; conditional downstream effects marked separately}
 
-**修复与回归**：{最窄修复；允许/拒绝回归用例；proposed vs executed 分开}
+**Fix and regression**: {narrowest fix; accept/reject regression cases; separate proposed from executed}
 
-## 3. 候选与策略关注（C-### / R-###）
+## 3. Candidates and Policy Concerns (C-### / R-###)
 
-| ID | 类型/标题 | 位置 | 已确立事实 | 缺失证据 | 下一步有界验证 |
+| ID | Type/title | Location | Established facts | Missing evidence | Next bounded verification |
 |---|---|---|---|---|---|
 
-裁决对照（两套词一等价，报告内任选一套但不得混用未注明）：
+Verdict mapping (the two vocabularies are equivalent; pick one per report but never mix them without saying so):
 
-| 裁决 | 等价词 | 含义 | 硬性要求 |
+| Verdict | Equivalent | Meaning | Hard requirement |
 |---|---|---|---|
-| `GO` | — | 升级为 F | 证据链完整 |
-| `HOLD-evidence` | `C-###` candidate | 缺一条关键证据 | 写清缺哪条、怎么补 |
-| `HOLD-capability` | `R-###` policy concern | 是能力不是缺陷，缺**策略声明** | 写清敏感度与策略问题 |
-| `KILL` | — | 证伪 | **必须给闸门 `path:line`**；给不出 → HOLD-evidence |
+| `GO` | — | promote to F | complete evidence chain |
+| `HOLD-evidence` | `C-###` candidate | one key piece of evidence is missing | state which one and how to obtain it |
+| `HOLD-capability` | `R-###` policy concern | a capability, not a defect; the **policy statement** is missing | state the sensitivity and the policy question |
+| `KILL` | — | falsified | **must give the gate `path:line`**; if you cannot -> HOLD-evidence |
 
-KILL 明细（闸门位置是硬要求）：
+KILL detail (the gate location is mandatory):
 
-| ID | 裁决 | 理由（含闸门 `path:line`，或"未查到"） |
+| ID | Verdict | Reason (including the gate `path:line`, or "not found") |
 |---|---|---|
 
-## 4. 应用面貌
+## 4. Application Surface
 
-{APP/L/EP/CMD-###：HTTP 路由、RPC 方法、CLI 命令分列；未解析关联显式保留}
-{字段定义见 application-surface.md；不得把静态注册写成已部署}
+{APP/L/EP/CMD-###: HTTP routes, RPC methods, CLI commands as separate lists; unresolved associations preserved explicitly}
+{field definitions in application-surface.md; never write a static registration as if it were deployed}
 
-## 5. 审查覆盖与证据
+## 5. Review Coverage and Evidence
 
-| 请求维度/范围 | 状态 | 已看入口/consumer | F/C/R | 缺口 |
+| Requested dimension/scope | State | Entries/consumers examined | F/C/R | Gap |
 |---|---|---|---|---|
 
-状态只有四种：`reviewed` / `partial` / `not-assessed` / `not-applicable`。
-`not-assessed` **不是**"干净"，报告里必须一眼可分。
+Only four states: `reviewed` / `partial` / `not-assessed` / `not-applicable`.
+`not-assessed` is **not** "clean"; it must be distinguishable at a glance in the report.
 
-| ID | 缺口 | 为什么没做 | 补它需要什么 |
+| ID | Gap | Why it was not done | What closing it would require |
 |---|---|---|---|
 | GAP-### | | | |
 
-## 6. 复现记录（L3-repro）
+## 6. Reproduction Records (L3-repro)
 
-没有就不写这一节，并在 §7 写"动态验证未执行"。
+If there are none, omit this section and write "no dynamic verification performed" in §7.
 
-### EV-### — {一句话}
+### EV-### — {one line}
 
-- 目标：{版本} @ {主机}，授权来源：{谁批的}，回滚路径：{如何还原}
-- 触发命令：{完整可复制}
-- 期望 / 实际：{字节数、响应码、内容摘要}
-- **负样本对照**：{同一请求 payload 中和后的结果}——缺这行，L3 无效
-- **口径**：{上游 writeup 与实测不符时写在这里。别信靶场目录名}
+- Target: {version} @ {host}, authorization source: {who approved}, rollback path: {how to restore}
+- Trigger command: {complete and copy-pasteable}
+- Expected / actual: {byte counts, response codes, content summary}
+- **Negative control**: {the same request with the payload neutralized} — without this line, L3 is void
+- **Interpretation**: {write here when the upstream writeup disagrees with the measurement. Do not trust a lab directory name}
 
-## 7. 限制与验证
+## 7. Limitations and Verification
 
-- 静态证据：{读过的树、跳过的树、行号回读方式}
-- 动态验证：{执行了什么 / 未执行，为什么}
-- 依赖获取：{拉了什么源码、从哪、是否校验}（源码获取 ≠ 运行时验证）
-- 目标修改：{应当是"无"；不得凭未修改就宣称整个工作树干净}
-- 方法论限制：{单规则扫描固有盲区，如 argv 跨函数组装、关键词通道无数据流}
+- Static evidence: {trees read, trees skipped, how line numbers were read back}
+- Dynamic verification: {what was executed / not executed, and why}
+- Dependency acquisition: {what source was fetched, from where, whether verified} (fetching source != runtime verification)
+- Target modification: {should be "none"; never claim the whole worktree is clean merely because you did not modify it}
+- Methodology limits: {inherent blind spots of single-rule scanning, e.g. argv assembled across functions, keyword channel with no data flow}
 
-## 8. 修复与回归
+## 8. Fixes and Regression
 
-| 优先级 | 对应 ID | 动作 | 回归判据 | 状态 |
+| Priority | ID | Action | Regression criterion | State |
 |---|---|---|---|---|
 | P1 | | | | proposed |
 
-proposed 与 executed 必须分开。没跑过的回归不能写成通过。
-范围类条目（F/C/R）分开：候选验证、策略决策与确认缺陷的修复是三种不同的事。
+proposed and executed must be separated. A regression that was never run cannot be written as passing.
+Scope entries (F/C/R) stay separate: candidate verification, policy decisions and fixes for confirmed defects are three different things.
 ```
 
-## 3. 证据完整性与交付前一致性检查
+## 3. Evidence Integrity and Pre-Delivery Consistency Check
 
-- 用真实的 repo 相对 `path:line` 与符号。不编造代码、行号、版本、运行结果、完整调用链。
-- 推断行为、不可用链接要标注。源码摘录短而保留相关防护——不许删掉检查让例子显得可利用。
-- 凭据/令牌脱敏并标注。生产秘钥不得作为证明或可运行复现出现在报告里。
-- `unknown` 带原因；`not-applicable` 带原因；交付的报告里没有未解析的模板占位符。
-- 同一根因跨路由别名/传输/模块去重；真正不同的边界分开保留。
+- Use real repo-relative `path:line` and symbols. Never fabricate code, line numbers, versions, run results or complete call chains.
+- Mark inferred behavior and dead links. Source excerpts stay short but keep the relevant guard — never delete a check to make an example look exploitable.
+- Redact credentials and tokens and say so. Production keys must not appear in a report as proof or as a runnable reproduction.
+- `unknown` carries a reason; `not-applicable` carries a reason; the delivered report contains no unresolved template placeholders.
+- Deduplicate one root cause across route aliases/transports/modules; keep genuinely different boundaries separate.
 
-交付前逐条打勾：
+Tick every item before delivery:
 
-- [ ] 候选总数 = 五种裁决之和（F + HOLD-evidence + HOLD-capability + KILL + 未判）
-- [ ] 每个 `path:line` 已单独回读，区间已核首末
-- [ ] 每个 `KILL` 有闸门位置；每个 `HOLD` 写清缺哪条证据
-- [ ] `L3-repro` 计数 = `EV-###` 条目数，每条有负样本对照与授权来源
-- [ ] `not-assessed` 与"reviewed 无发现"在报告里不混
-- [ ] 没有把"扫描器跳过/关键词未命中"写成"没有漏洞"
-- [ ] 每个维度在 §5 覆盖表有一行（含 not-applicable 带原因）
-- [ ] 报告里没有留下 `<占位符>`；秘密已脱敏
-- [ ] F-ID 唯一、交叉引用有效、计数与元数据一致
-- [ ] 零发现时明确写"检查范围内未确认发现"+残余不确定性；不得从"没查到"推出"安全"
+- [ ] Total candidates = sum of the five verdicts (F + HOLD-evidence + HOLD-capability + KILL + undecided)
+- [ ] Every `path:line` was read back individually, ranges verified at both ends
+- [ ] Every `KILL` has a gate location; every `HOLD` states which evidence is missing
+- [ ] The `L3-repro` count equals the number of `EV-###` entries, each with a negative control and an authorization source
+- [ ] `not-assessed` and "reviewed with no findings" are not blurred
+- [ ] "Scanner skipped / keyword missed" is never written as "no vulnerability"
+- [ ] Every dimension has a row in the §5 coverage table (including not-applicable with a reason)
+- [ ] No `<placeholder>` left in the report; secrets redacted
+- [ ] F-IDs unique, cross-references valid, counts consistent with the metadata
+- [ ] With zero findings, state "no confirmed findings within the checked scope" plus residual uncertainty; never derive "secure" from "did not find"

@@ -1,119 +1,136 @@
-# 接单即开工：渗透测试架构师 prompt 模板
+# Intake: pentest-architect prompt templates
 
-用途：把下面的模板原样粘进会话（或由 skill 自动加载），让执行者立刻进入**裁决**状态，
-而不是先讲一遍方法论。模板里没有任何"我将要分析"之类的缓冲句——那种句子会把
-第一轮预算烧在自我介绍上。
+Purpose: paste the templates below verbatim into a session (or let the skill load them
+automatically) so the executor enters **verdict** state immediately instead of first
+reciting the methodology. None of the templates contains a buffer sentence like "I will
+now analyse" — that kind of sentence burns the first round's budget on self-introduction.
 
 ---
 
-## 模板 A — 定向挖洞（默认）
+## Template A — Targeted hunting (default)
 
 ```text
-你是渗透测试架构师，不是代码讲解员。你现在已经具备本 skill 的全部规则与案例。
-不要复述方法论，不要解释六相模型，直接开始裁决。
+You are a pentest architect, not a code explainer. You already have every rule and case in
+this skill. Do not restate the methodology, do not explain the six-phase model, start
+verdicting immediately.
 
-【目标】<path>  commit=<sha>
-【本次只证明】<一句话，例：DetailName 能否注入到 remote.go:137 的 bash -c>
-【成功标准】<L2 或 明确的闸门位置；不追求 L3，因为 <原因>>
-【授权边界】<自有实例 / 仅静态审计不发包 / 可编译可起服务>
+[Target] <path>  commit=<sha>
+[Prove this round only] <one sentence, e.g. can DetailName reach the bash -c at remote.go:137>
+[Success criterion] <L2, or a named gate location; L3 not pursued because <reason>>
+[Authorization boundary] <own instance / static audit only, no packets / may compile and start services>
 
-从现在开始按这个顺序干活，每步只输出结论和证据行：
+From now on work in this order, and each step outputs conclusions and evidence lines only:
 
-1. 60 秒事实卡：go 版本 / 框架 / 路由文件 / 部署用户 / 镜像有无 shell
-   —— 这五项之外的东西现在一律不读。
+1. 60-second fact card: go version / framework / routing files / deployment user / whether the
+   image has a shell
+   -- nothing outside these five items is read right now.
 
-2. 逆向假设（不做正向污点分析，Go 链只有 2–5 跳，反向更便宜）：
-   先写一句"如果这个项目有 RCE，最可能长什么样"，形如
-   "某个未授权 handler 的参数，进到 <某类 sink>，中间只过 <某类变换>"。
-   然后去验证这句话；验证失败就换假设，不要回去做全量扫描。
+2. Reverse hypothesis (no forward taint analysis; Go chains are only 2-5 hops, so backwards is
+   cheaper): first write one sentence "if this project has an RCE, what would it most likely look
+   like", in the form "a parameter of some unauthenticated handler reaches <some class of sink>
+   through only <some class of transform>". Then go verify that sentence; if it fails, switch
+   hypotheses, do not fall back to a full scan.
 
-3. 候选排序：只报 Tier S/A。Tier B 必须先写出"谁在什么时机执行"才允许报。
+3. Candidate ordering: report Tier S/A only. Tier B may be reported only after writing out "who
+   executes this, and when".
 
-4. 每条候选给三行，多一个字都不要：
-   F<n> | <相> | <sink path:line> | <入口 URL + 认证态> | <参数名>
-   链：<入口> -> <跳1> -> <跳2> -> <sink>   闸门：<有/无 + path:line>
-   裁决：GO / HOLD(缺什么) / KILL(被哪条闸门挡)
+4. Every candidate gets three lines, not one word more:
+   F<n> | <phase> | <sink path:line> | <entry URL + auth state> | <parameter name>
+   chain: <entry> -> <hop 1> -> <hop 2> -> <sink>   gate: <yes/no + path:line>
+   verdict: GO / HOLD(missing what) / KILL(blocked by which gate)
 
-5. 收尾必须有一节 Rejected，写清哪条被什么挡住。没有 Rejected 的报告视为没查闸门。
+5. The closing section must include Rejected, stating which candidate was blocked by what. A
+   report without Rejected is treated as never having checked the gates.
 
-禁止：
-- 说"这个功能看起来很危险"而不给 path:line
-- 把 L0/L1 说成漏洞
-- 引用没打开过的 CVE 编号
-- 在没查完闸门时说"建议进一步验证"
+Forbidden:
+- saying "this feature looks dangerous" without a path:line
+- presenting L0/L1 as a vulnerability
+- citing a CVE ID you have not opened
+- saying "further validation is recommended" before the gates are checked
 ```
 
 ---
 
-## 模板 B — 能力标定（测方法论准不准）
+## Template B — Capability calibration (does the methodology actually rank well)
 
 ```text
-你是评测者，任务是测本 skill 的排序能力，不是挖漏洞。
+You are an evaluator. Your job is to test this skill's ranking ability, not to find vulnerabilities.
 
-【语料】<n> 个真实项目，目录 <path>
-【协议】盲跑。先只跑扫描器与 Tier 排序，产出每个项目的 Top-5 候选，
-        记录 file:line 与相。此时不看任何 CVE 资料。
-【评分】跑完之后再对照公开事实，计算：
-        - Top-1 / Top-3 / Top-5 命中率（真漏洞是否在名单里）
-        - 噪声比（Top-5 里几条是噪声）
-        - 漏报（公开漏洞完全没进名单的，逐条说明为什么规则盲）
-【产物】一张表 + 一节"规则该补什么"，每个漏报对应一条具体规则改动
+[Corpus] <n> real projects, under <path>
+[Protocol] Blind run. First run only the scanner and the Tier ordering, producing each project's
+           Top-5 candidates with file:line and phase. Do not look at any CVE material yet.
+[Scoring] Only afterwards, compare against public facts and compute:
+          - Top-1 / Top-3 / Top-5 hit rate (is the real vulnerability on the list)
+          - noise ratio (how many of the Top-5 are noise)
+          - misses (public vulnerabilities that never made the list; explain case by case why the
+            rules were blind)
+[Deliverable] one table + one section "what the rules should add", each miss mapped to a concrete
+              rule change
 
-不允许事后给自己找补。漏报就是漏报，写清是哪条规则该命中却没命中。
+No retroactive excuses. A miss is a miss: state which rule should have fired and did not.
 ```
 
 ---
 
-## 模板 C — 复现校验（CVE 真的能打吗）
+## Template C — Reproduction check (is the CVE actually exploitable)
 
 ```text
-你是复现者。目标是把 <CVE / 案例名> 从"描述"降级到"事实"。
+You are the reproducer. The goal is to demote <CVE / case name> from "description" to "fact".
 
-顺序不能反：
-1. 先读补丁 diff，写出"修复前是什么、修复后是什么"。没有 diff 就没有机制。
-2. 用 diff 反推漏洞形态属于哪一相，写出 falsifier。
-3. 才去看 writeup / PoC。看完必须能解释 writeup 里每一步对应的源码行。
-   解释不了的步骤，视为该 writeup 在编。
-4. 本机复现：隔离环境、无害 payload（id / touch）、必须有负对照。
-5. 结论只允许三种：L3 已复现 / L2 未复现（缺什么）/ BLOCKED（缺什么）。
+The order cannot be reversed:
+1. Read the patch diff first, and write out "what it was before the fix, what it is after". No
+   diff means no mechanism.
+2. Use the diff to infer which phase the vulnerability shape belongs to, and write the falsifier.
+3. Only then read the writeup / PoC. After reading, you must be able to explain which source line
+   each step in the writeup corresponds to. Any step you cannot explain means the writeup is
+   making it up.
+4. Reproduce locally: isolated environment, harmless payload (id / touch), a negative control is
+   mandatory.
+5. Only three conclusions are allowed: L3 reproduced / L2 not reproduced (missing what) /
+   BLOCKED (missing what).
 
-如果 writeup 与源码冲突，以源码为准，并把偏差写进报告——
-vulhub 目录名叫 gitea/1.4-rce，但 1.4.0 源码的写侧被 sha256 闸门封死，
-这条只能定级为"未授权任意文件读"。
+If the writeup conflicts with the source, the source wins, and record the deviation in the report --
+the vulhub directory is named gitea/1.4-rce, but in the 1.4.0 source the write side is sealed by a
+sha256 gate, so this can only be graded "unauthenticated arbitrary file read".
 ```
 
 ---
 
-## 逆向假设的写法（模板 A 第 2 步展开）
+## How to write a reverse hypothesis (Template A step 2, expanded)
 
-正向污点分析在 Go 上是亏的：入口多、中间件多、interface 派发多，
-你必须枚举所有入口才能保证不漏。反向不一样——sink 是有限集（扫描器已经给了），
-从 sink 往上找 caller，Go 没有动态派发，**找到 handler 边界就可以停**。
+Forward taint analysis is a losing trade on Go: many entries, many middleware layers, many
+interface dispatches, and you must enumerate every entry to guarantee no miss. Reverse is
+different — sinks are a finite set (the scanner already produced it), you walk up from the sink to
+its callers, Go has no dynamic dispatch, and **you can stop at the handler boundary**.
 
-一句合格的逆向假设必须包含三个槽位，缺一个就说明你还没想清楚：
+A competent reverse hypothesis must fill three slots; a missing slot means you have not yet decided
+what you are looking for:
 
 ```text
-<入口的可控性> + <sink 的形态> + <中间变换的性质>
+<controllability of the entry> + <shape of the sink> + <nature of the intermediate transforms>
 ```
 
-对照真实案例：
+Against real cases:
 
-| 假设 | 入口可控性 | sink 形态 | 中间变换 | 结论 |
+| Hypothesis | Entry controllability | Sink shape | Intermediate transform | Conclusion |
 |---|---|---|---|---|
-| Gitea 1.4.0 | 未授权 POST（requireAuth 后缺 return） | `filepath.Join(Base, transformKey(oid))` → `os.Open` | 无校验，只切 4 个字符 | 读侧成立 |
-| 同上，写侧 | 同上 | `WriteFile(path+".tmp")` → `sha256==oid` → Rename | **内容必须等于路径哈希** | 互斥，写侧死 |
-| 1Panel | `POST /settings/backup/backup`，需登录 | `exec.Command("bash","-c", fmt.Sprintf(...))` | `> %s` 外层无引号 | 待查白名单 |
-| gf | 无（字面量） | `sh -c "eval echo ~$USER"` | 全字面量 | 假阳 |
+| Gitea 1.4.0 | unauthenticated POST (requireAuth missing its return) | `filepath.Join(Base, transformKey(oid))` → `os.Open` | no validation, only 4 characters sliced | read side holds |
+| same, write side | same | `WriteFile(path+".tmp")` → `sha256==oid` → Rename | **content must equal the hash of the path** | mutually exclusive, write side dead |
+| 1Panel | `POST /settings/backup/backup`, login required | `exec.Command("bash","-c", fmt.Sprintf(...))` | `> %s` unquoted at the outer level | allowlist still to check |
+| gf | none (literal) | `sh -c "eval echo ~$USER"` | all literal | false positive |
 
-这张表反过来就是**判定顺序**：先问入口可控吗，再问 sink 真会执行吗，
-最后问中间有没有闸门。三步里任何一步是"否"，就不必写 payload。
+Read that table backwards and you get the **decision order**: first ask whether the entry is
+controllable, then whether the sink really executes, and finally whether a gate sits in between. If
+any of the three is "no", there is no point writing a payload.
 
 ---
 
-## 架构师的三条纪律
+## Three disciplines of the architect
 
-1. **先给否决理由，再给确认理由**。一份报告里 Rejected 比 Findings 更能说明工作量。
-2. **预算优先于完整性**。S+A 全查上限 150 分钟，超了就写 Coverage gaps。
-   追求"全部查完"的结果通常是"全部没查透"。
-3. **不许有第四种裁决**。GO / HOLD / KILL 之外没有"再看看"。
-   HOLD 必须写清缺什么，否则等同于 KILL。
+1. **Give the rejection reason before the confirmation reason.** In a report, Rejected says more
+   about the work done than Findings does.
+2. **Budget beats completeness.** Checking all of S+A is capped at 150 minutes; past that, write
+   Coverage gaps. The usual outcome of pursuing "check everything" is "nothing was checked
+   thoroughly".
+3. **There is no fourth verdict.** Outside GO / HOLD / KILL there is no "look again later".
+   HOLD must state what is missing, otherwise it is equivalent to KILL.

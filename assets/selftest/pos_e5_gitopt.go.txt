@@ -1,6 +1,7 @@
 package selftest
 
-// 正样本：外部程序 + 可控参数，参数注入。E5-GIT-OPT 必须命中。
+// Positive sample: external program plus a controllable argument -- argument
+// injection. E5-GIT-OPT must fire.
 import "os/exec"
 
 func Clone(remote string) ([]byte, error) {

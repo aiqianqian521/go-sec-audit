@@ -5,9 +5,11 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// .Parse( 不等于模板求值。jwt.Parse / cron.Parse / 自造解析器都叫 Parse，
-// 但永远评不出 Go 代码。文件级判据：没有 import text/template 或 html/template 就不是 E2。
-// woodpecker shared/token/token.go:52、server/cron/cron.go:81 是这两类形态。
+// A Parse call is not template evaluation. jwt.Parse, cron.Parse and hand-rolled
+// parsers are all named Parse, yet they never evaluate Go code.
+// File-level criterion: without an import of text/template or html/template this
+// is not E2.
+// woodpecker shared/token/token.go:52 and server/cron/cron.go:81 are these two shapes.
 func verify(raw string, keyFunc jwt.Keyfunc) (*jwt.Token, error) {
 	return jwt.Parse(raw, keyFunc)
 }

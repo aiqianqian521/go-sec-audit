@@ -10,12 +10,12 @@ dist/
 venv/
 env/
 
-# 扫描输出（本地产物，不入库）
+# Scan output (local artifacts, not committed)
 scans/
 *.sarif
 stress-out/
 
-# 编辑器与系统
+# Editors and OS
 .vscode/
 .idea/
 .DS_Store
@@ -24,6 +24,6 @@ Thumbs.db
 *~
 *.bak
 
-# 审计过程的临时物
+# Scratch files produced during an audit run
 /tmp/
 *.tmp

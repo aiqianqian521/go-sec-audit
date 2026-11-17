@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""stress_kwcheck.py — 关键词通道压力测试检查器（stdlib only）
+"""stress_kwcheck.py -- keyword-channel stress checker (stdlib only)
 
-从 references/vuln-features.md 的 ```bash 代码块里解析 `rg -n 'PATTERN' -t go` 的正则，
-逐条应用到 assets/stress/ 语料上，输出每文件命中行。
-单一事实来源：正则只存在 vuln-features.md 里，本脚本只做解析与应用，
-文档改动后无需改本脚本（防漂移设计）。
+Parses the `rg -n 'PATTERN' -t go` regexes out of the ```bash blocks in
+references/vuln-features.md, applies them line by line to the assets/stress/
+corpus, and prints the matching lines per file.
+Single source of truth: the regexes live only in vuln-features.md; this script
+just parses and applies them, so the document can change without touching this
+file (drift-proof by design).
 
-用法: python assets/stress/stress_kwcheck.py [--corpus assets/stress]
+Usage: python assets/stress/stress_kwcheck.py [--corpus=assets/stress]
 """
 
 from __future__ import print_function
@@ -21,7 +23,7 @@ FEATURES = os.path.join(SKILL_ROOT, "references", "vuln-features.md")
 
 
 def extract_patterns(md_path):
-    """从 vuln-features.md 的 bash 代码块里抽 rg -n 'PATTERN' 的正则。"""
+    """Extract the rg -n 'PATTERN' regexes from the bash blocks of vuln-features.md."""
     text = open(md_path, encoding="utf-8").read()
     pats = []
     in_block = False
@@ -45,7 +47,7 @@ def main():
             corpus = a.split("=", 1)[1]
 
     pats = extract_patterns(FEATURES)
-    print("vuln-features.md 提取到 %d 条关键词正则" % len(pats))
+    print("extracted %d keyword regexes from vuln-features.md" % len(pats))
 
     go_files = sorted(f for f in os.listdir(corpus) if f.endswith(".go"))
     compiled = [(p, re.compile(p)) for p in pats]
@@ -58,7 +60,7 @@ def main():
             if hits:
                 hit_count += 1
                 print("%s:%d  <- %s" % (fname, i, " ; ".join(sorted(set(hits))[:3])))
-    print("---- 总计 %d 个文件命中行（含允许的唤醒）" % hit_count)
+    print("---- %d matching lines in total (wake-ups allowed)" % hit_count)
 
 
 if __name__ == "__main__":
