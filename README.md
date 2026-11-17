@@ -157,3 +157,18 @@ MIT，见 [LICENSE](LICENSE)。
 ## 免责
 
 仅用于**已获授权**的代码审计与安全研究。对第三方系统执行任何验证动作前，必须先取得书面授权。
+
+## Related Projects
+
+`go-sec-audit` is a domain skill in the `aiqianqian521` agent-skill family. The sibling
+repositories supply the execution discipline, the report structure and the orchestration that
+drive it; this one supplies the Go security verdict.
+
+| Repository | What it is | Relation to `go-sec-audit` |
+| --- | --- | --- |
+| [aiqianqian521/github-project-evaluation](https://github.com/aiqianqian521/github-project-evaluation) | Cross-source project discovery, frozen-repo static first pass, per-project test design | Its first pass can call this skill as the Go security dimension |
+| [aiqianqian521/ai-skill-output-template](https://github.com/aiqianqian521/ai-skill-output-template) | Declarative output-template registry | Same contract idea: stable, verifiable, regression-checked report structure |
+| [aiqianqian521/ooda_skill](https://github.com/aiqianqian521/ooda_skill) | OODA execution discipline (purpose, evidence, verify, close) | The round loop that drives an audit; verdicts feed its per-round records |
+| [aiqianqian521/sloth-loop](https://github.com/aiqianqian521/sloth-loop) | Zero-LLM task orchestration engine | Orchestrates repeated audits; this skill is one domain capability inside a run |
+
+> Sibling skill kept local for now: `go-rce-hunt` (remote code execution hunting in Go source trees).
