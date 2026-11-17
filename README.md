@@ -184,5 +184,4 @@ drive it; this one supplies the Go security verdict.
 | [aiqianqian521/ai-skill-output-template](https://github.com/aiqianqian521/ai-skill-output-template) | Declarative output-template registry | Same contract idea: stable, verifiable, regression-checked report structure |
 | [aiqianqian521/ooda_skill](https://github.com/aiqianqian521/ooda_skill) | OODA execution discipline (purpose, evidence, verify, close) | The round loop that drives an audit; verdicts feed its per-round records |
 | [aiqianqian521/sloth-loop](https://github.com/aiqianqian521/sloth-loop) | Zero-LLM task orchestration engine | Orchestrates repeated audits; this skill is one domain capability inside a run |
-
-> Sibling skill kept local for now: `go-rce-hunt` (remote code execution hunting in Go source trees).
+| [aiqianqian521/go-rce-hunt](https://github.com/aiqianqian521/go-rce-hunt) | Go RCE hunting skill (six-path RCE model, L0-L3 evidence gate) | Closest sibling: same evidence-gate discipline, narrower surface (RCE only) |
