@@ -1,0 +1,22 @@
+package sample
+
+import (
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/robfig/cron/v3"
+)
+
+// .Parse( 不等于模板求值。jwt.Parse / cron.Parse / 自造解析器都叫 Parse，
+// 但永远评不出 Go 代码。文件级判据：没有 import text/template 或 html/template 就不是 E2。
+// woodpecker shared/token/token.go:52、server/cron/cron.go:81 是这两类形态。
+func verify(raw string, keyFunc jwt.Keyfunc) (*jwt.Token, error) {
+	return jwt.Parse(raw, keyFunc)
+}
+
+func next(schedule string) error {
+	parser, err := cron.NewDefaultParser(cron.StandardOptions)
+	if err != nil {
+		return err
+	}
+	_, err = parser.Parse(schedule)
+	return err
+}

@@ -1,0 +1,8 @@
+package selftest
+
+// 正样本：外部程序 + 可控参数，参数注入。E5-GIT-OPT 必须命中。
+import "os/exec"
+
+func Clone(remote string) ([]byte, error) {
+	return exec.Command("git", "clone", "--upload-pack="+remote, "repo").CombinedOutput()
+}

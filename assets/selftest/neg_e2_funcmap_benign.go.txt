@@ -1,0 +1,18 @@
+package x
+
+import (
+	"html/template"
+	"os/exec"
+	"strings"
+)
+
+// 负样本：FuncMap 全是纯函数，同文件里另有常量 exec 调用。
+// E2-FUNCMAP-DEF 不得命中（FuncMap 键名与键值都无执行能力），
+// 常量 exec 也不得被 E1 命中（none_of 常量过滤）。
+var safeFmap = template.FuncMap{
+	"upper": func(s string) string { return strings.ToUpper(s) },
+}
+
+func ls() {
+	exec.Command("ls", "-l").Run()
+}

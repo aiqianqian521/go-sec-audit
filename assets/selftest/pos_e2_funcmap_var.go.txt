@@ -1,0 +1,15 @@
+package x
+
+import (
+	"html/template"
+	"os/exec"
+)
+
+// FuncMap 定义与 .Funcs() 调用分离：E2-FUNCMAP-EXEC 锚不到这种形态，
+// 必须由 E2-FUNCMAP-DEF 直接锚 FuncMap{ 字面量。
+var fmap = template.FuncMap{
+	"run": func(c string) string {
+		out, _ := exec.Command("sh", "-c", c).CombinedOutput()
+		return string(out)
+	},
+}

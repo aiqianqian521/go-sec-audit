@@ -1,0 +1,21 @@
+package selftest
+
+// 正样本：FuncMap 注册了可执行函数，且模板文本来自请求。E2-FUNCMAP-EXEC 必须命中。
+import (
+	"net/http"
+	"os/exec"
+	"text/template"
+)
+
+func RenderUserTpl(w http.ResponseWriter, r *http.Request) {
+	tpl := r.URL.Query().Get("tpl")
+	t := template.New("user")
+	t.Funcs(template.FuncMap{
+		"run": func(c string) string {
+			out, _ := exec.Command("sh", "-c", c).CombinedOutput()
+			return string(out)
+		},
+	})
+	t.Parse(tpl)
+	t.Execute(w, nil)
+}

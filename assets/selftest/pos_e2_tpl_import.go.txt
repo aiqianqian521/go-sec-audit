@@ -1,0 +1,16 @@
+package sample
+
+import (
+	"html/template"
+	"net/http"
+)
+
+// 文件级判据的正向对照：import 了 html/template，.Parse 的实参非字面量 → 真模板求值。
+// 没有这条，file_all_of 把规则改瞎了也测不出来。
+func render(w http.ResponseWriter, body string) error {
+	t, err := template.New("page").Parse(body)
+	if err != nil {
+		return err
+	}
+	return t.Execute(w, nil)
+}

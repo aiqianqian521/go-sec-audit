@@ -1,0 +1,8 @@
+package selftest
+
+// 负样本：字符串拼接进 SQL，是 SQLi 不是 RCE。不得命中任何 E 类规则。
+import "fmt"
+
+func Query(id string) string {
+	return fmt.Sprintf("SELECT * FROM t WHERE id = '%s'", id)
+}

@@ -1,0 +1,8 @@
+package selftest
+
+// 负样本：模板文本是字面量，FuncMap 只有安全函数。E2 类规则必须不命中。
+import "html/template"
+
+var page = template.Must(template.New("p").Funcs(template.FuncMap{
+	"upper": func(s string) string { return s },
+}).Parse(`<h1>{{ upper .Title }}</h1>`))

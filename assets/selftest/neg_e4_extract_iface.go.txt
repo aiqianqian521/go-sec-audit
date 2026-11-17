@@ -1,0 +1,23 @@
+package driver
+
+import "context"
+
+// 接口方法名叫 Extract，但它不是归档解压，不含 Zip Slip 语义。
+// 盲测发现：alist 的 22 条 Tier B、cloudreve 的 18 条 Tier B 全部是这类
+// "driver.Extract 方法定义" 被误判成解压漏洞，故立此负样本。
+type Extractor interface {
+	Extract(ctx context.Context, obj []byte, args Args) ([]byte, error)
+}
+
+type Args struct{}
+type Gofile struct{}
+
+func (d *Gofile) Extract(ctx context.Context, obj []byte, args Args) ([]byte, error) {
+	return obj, nil
+}
+
+type Alias struct{}
+
+func (d *Alias) Extract(ctx context.Context, obj []byte, args Args) ([]byte, error) {
+	return obj, nil
+}

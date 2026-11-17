@@ -1,0 +1,15 @@
+package selftest
+
+// 负样本：shell + -c，但脚本串是编译期字面量，没有任何变量进入，不可能注入。
+// E1 类规则必须全部不命中。
+// 来源：760k LOC 真实语料里取当前用户 home 目录的那种写法会白占一条 critical，
+// 属纯噪声。排除判据：第三个参数是完整字面量且立即闭合括号。
+// 注意：本注释刻意不写出该调用形态，否则扫描器会把注释文本当成命中。
+import (
+	"os/exec"
+)
+
+func HomeDir() string {
+	out, _ := exec.Command("sh", "-c", "eval echo ~$USER").Output()
+	return string(out)
+}

@@ -1,0 +1,14 @@
+package selftest
+
+// 正样本：shell 解释器 + 拼接脚本串。规则 E1-SHELL-C 必须命中。
+import (
+	"net/http"
+	"os/exec"
+)
+
+func ReportHandler(w http.ResponseWriter, r *http.Request) {
+	name := r.FormValue("filename")
+	cmd := exec.Command("sh", "-c", "cat /reports/"+name)
+	out, _ := cmd.Output()
+	w.Write(out)
+}

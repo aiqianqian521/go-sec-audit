@@ -1,0 +1,12 @@
+package selftest
+
+// 正样本：写入 git hooks 目录（write-then-execute）。规则 E4-HOOK-WRITE 必须命中。
+import (
+	"os"
+	"path/filepath"
+)
+
+func InstallHook(repoDir, body string) error {
+	target := filepath.Join(repoDir, ".git", "hooks", "post-merge")
+	return os.WriteFile(target, []byte(body), 0755)
+}

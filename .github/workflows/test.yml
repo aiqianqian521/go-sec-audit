@@ -1,0 +1,48 @@
+name: test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.9", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: 显示 Python 版本
+        run: python --version
+
+      - name: 规则自测（含变异测试：改坏规则必须让断言失败）
+        run: python scripts/test_scan_sinks.py
+
+      - name: 关键词通道回归（从 vuln-features.md 解析正则）
+        run: python assets/stress/stress_kwcheck.py
+
+      - name: 扫描器冒烟（植入语料应产出候选）
+        run: python scripts/scan_sinks.py assets/stress --quiet
+
+      - name: 检索器冒烟
+        run: python scripts/kb_retrieve.py --list
+
+      - name: 断言负样本零误报
+        shell: bash
+        run: |
+          out=$(python scripts/scan_sinks.py assets/stress 2>&1)
+          if echo "$out" | grep -q "neg_safe.go"; then
+            echo "::error::neg_safe.go 被扫描器命中，负样本误报"
+            echo "$out" | grep "neg_safe.go"
+            exit 1
+          fi
+          echo "负样本零误报"

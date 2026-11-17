@@ -1,0 +1,14 @@
+package selftest
+
+// 负样本：参数分开传，无 shell 参与。E1 类规则必须全部不命中。
+// 注意：这不是"绝对安全"，只是 E1（shell 拼接）不成立；选项注入另判。
+import (
+	"net/http"
+	"os/exec"
+)
+
+func SafeCat(w http.ResponseWriter, r *http.Request) {
+	name := r.FormValue("filename")
+	out, _ := exec.Command("cat", "/reports/"+name).Output()
+	w.Write(out)
+}
